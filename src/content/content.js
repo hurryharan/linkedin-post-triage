@@ -168,10 +168,11 @@ async function expandTruncatedText(container) {
 // before any post has actually painted. Poll for a while instead of a single
 // snapshot before concluding there's nothing there.
 async function waitForContainers() {
-  return waitFor(() => {
-    const found = document.querySelectorAll(SELECTORS.postContainer);
-    return found.length ? found : null;
-  }, { timeout: 8000, interval: 250 }) || [];
+  const found = await waitFor(() => {
+    const els = document.querySelectorAll(SELECTORS.postContainer);
+    return els.length ? els : null;
+  }, { timeout: 8000, interval: 250 });
+  return found || [];
 }
 
 async function scrapeSavedPosts() {
