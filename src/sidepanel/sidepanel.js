@@ -61,12 +61,47 @@ async function getLinkedInTabs() {
   return chrome.tabs.query({ url: '*://www.linkedin.com/*' });
 }
 
+// Declarative content_scripts only auto-inject into *new* page loads — a tab
+// that was already open before the extension was installed/reloaded never
+// gets it, which is exactly what produces "Could not establish connection.
+// Receiving end does not exist." So inject explicitly before every message;
+// content.js's own load guard makes re-injecting into an already-loaded tab
+// a harmless no-op.
+async function ensureContentScript(tabId) {
+  try {
+    await chrome.scripting.executeScript({ target: { tabId }, files: ['src/content/content.js'] });
+  } catch (err) {
+    // Fails on chrome:// pages, a tab mid-navigation, etc. — sendMessage
+    // below will surface the real error if the script truly isn't there.
+  }
+}
+
+async function waitForTabComplete(tabId, timeoutMs = 15000) {
+  const tab = await chrome.tabs.get(tabId).catch(() => null);
+  if (!tab || tab.status === 'complete') return;
+  await new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      chrome.tabs.onUpdated.removeListener(listener);
+      resolve();
+    }, timeoutMs);
+    function listener(updatedTabId, info) {
+      if (updatedTabId === tabId && info.status === 'complete') {
+        clearTimeout(timer);
+        chrome.tabs.onUpdated.removeListener(listener);
+        resolve();
+      }
+    }
+    chrome.tabs.onUpdated.addListener(listener);
+  });
+}
+
 async function sendToLinkedInTabs(message) {
   const tabs = await getLinkedInTabs();
   if (!tabs.length) return { ok: false, error: 'no LinkedIn tab is open' };
   let last = { ok: false, error: 'no matching tab responded' };
   for (const tab of tabs) {
     try {
+      await ensureContentScript(tab.id);
       const res = await chrome.tabs.sendMessage(tab.id, message);
       if (res && res.ok) return res;
       if (res) last = res;
@@ -89,7 +124,10 @@ async function ensureSavedPostsTab() {
 document.getElementById('scanBtn').addEventListener('click', async () => {
   setBanner('Scanning saved posts…');
   const tab = await ensureSavedPostsTab();
-  await new Promise((r) => setTimeout(r, tab.status === 'complete' ? 100 : 2500));
+  await waitForTabComplete(tab.id);
+  // LinkedIn is a client-rendered SPA — "complete" fires before the saved
+  // posts list has actually painted, so give it a beat before scraping.
+  await new Promise((r) => setTimeout(r, 1200));
   const res = await sendToLinkedInTabs({ type: 'LPT_SCRAPE_SAVED_POSTS' });
   if (!res.ok) {
     setBanner(`Scan failed: ${res.error}`);

@@ -5,6 +5,16 @@
 // place. Every scrape/action is wrapped so one bad post doesn't kill a batch;
 // failures are returned as { ok:false, error } and surfaced by the side panel
 // rather than thrown, per the PRD's "tell me it broke" requirement.
+//
+// Wrapped in a load-guard block: the side panel re-injects this file via
+// chrome.scripting.executeScript before every action, to cover tabs that
+// were already open before the extension loaded (declarative content_scripts
+// only auto-inject into new page loads). Re-running the file is otherwise
+// unsafe — a bare top-level `const` would throw "already declared" on a
+// second injection into the same page, and the message listener would
+// double-fire; the `{ }` block below gives them fresh block scope instead.
+if (!window.__ltpContentScriptLoaded) {
+window.__ltpContentScriptLoaded = true;
 
 const SELECTORS = {
   postContainer: '.feed-shared-update-v2, div.occludable-update, div[data-urn]',
@@ -262,3 +272,5 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   })();
   return true; // keep the channel open for the async response
 });
+
+} // end __ltpContentScriptLoaded guard
