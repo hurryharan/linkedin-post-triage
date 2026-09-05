@@ -15,11 +15,25 @@
       <button id="scanBtn">Scan saved posts</button>
       <button id="classifyAllBtn">Classify all pending</button>
       <button id="exportBtn">Export .xlsx</button>
+      <button id="logsBtn" title="Debug logs">Logs</button>
       <button id="settingsBtn" title="Settings">⚙</button>
     </div>
   </header>
 
   <div id="banner" class="banner" hidden></div>
+
+  <div id="logsPanel" class="logs-panel" hidden>
+    <div class="logs-toolbar">
+      <span>Debug log (newest last) — useful to copy/paste when reporting a bug.</span>
+      <div class="btns">
+        <button id="logsCopyBtn" class="small">Copy</button>
+        <button id="logsClearBtn" class="small">Clear</button>
+        <button id="logsCloseBtn" class="small">Close</button>
+      </div>
+    </div>
+    <pre id="logsContent" class="logs-content"></pre>
+  </div>
+
   <div id="list" class="list"></div>
 
   <!-- Vendored SheetJS (Apache-2.0, see vendor/XLSX-LICENSE), classic script for the global XLSX. -->

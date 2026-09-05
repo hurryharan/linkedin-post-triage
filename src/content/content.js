@@ -16,6 +16,31 @@
 if (!window.__ltpContentScriptLoaded) {
 window.__ltpContentScriptLoaded = true;
 
+// Persisted debug log (chrome.storage.local, ring buffer) so failures can be
+// read from the side panel's Logs view instead of needing this LinkedIn
+// tab's own devtools console. Keep the key/shape in sync with src/lib/logger.js.
+const LTP_LOG_KEY = 'ltp_debug_log_v1';
+const LTP_LOG_MAX = 300;
+
+function appendLog(level, source, message) {
+  chrome.storage.local.get(LTP_LOG_KEY).then((data) => {
+    const list = data[LTP_LOG_KEY] || [];
+    list.push({ ts: new Date().toISOString(), level, source, message });
+    while (list.length > LTP_LOG_MAX) list.shift();
+    return chrome.storage.local.set({ [LTP_LOG_KEY]: list });
+  }).catch(() => {});
+}
+
+function log(source, ...args) {
+  console.log(`[LTP:content:${source}]`, ...args);
+  appendLog('log', `content:${source}`, args.map(String).join(' '));
+}
+
+function logError(source, ...args) {
+  console.error(`[LTP:content:${source}]`, ...args);
+  appendLog('error', `content:${source}`, args.map(String).join(' '));
+}
+
 const SELECTORS = {
   postContainer: '.feed-shared-update-v2, div.occludable-update, div[data-urn]',
   actorName: '.update-components-actor__name',
@@ -152,7 +177,8 @@ async function scrapeSavedPosts() {
       errors.push(String(err));
     }
   }
-  return { posts: results, errors, containerCount: containers.length };
+  log('scrapeSavedPosts', `found ${containers.length} container(s), ${results.length} parsed, ${errors.length} failed`);
+  return { ok: true, posts: results, errors, containerCount: containers.length };
 }
 
 function findContainerByUrn(urn) {
@@ -247,28 +273,39 @@ async function submitComment(urn) {
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   (async () => {
-    switch (message.type) {
-      case 'LPT_SCRAPE_SAVED_POSTS':
-        sendResponse(await scrapeSavedPosts());
-        break;
-      case 'LPT_DO_LIKE':
-        sendResponse(await doLike(message.urn));
-        break;
-      case 'LPT_IS_SAVED':
-        sendResponse(await isSaved(message.urn));
-        break;
-      case 'LPT_DO_UNSAVE':
-        sendResponse(await doUnsave(message.urn));
-        break;
-      case 'LPT_INSERT_COMMENT':
-        sendResponse(await insertCommentDraft(message.urn, message.text));
-        break;
-      case 'LPT_SUBMIT_COMMENT':
-        sendResponse(await submitComment(message.urn));
-        break;
-      default:
-        sendResponse({ ok: false, error: `unknown message type: ${message.type}` });
+    log('onMessage', 'received', message.type, message.urn || '');
+    let result;
+    try {
+      switch (message.type) {
+        case 'LPT_SCRAPE_SAVED_POSTS':
+          result = await scrapeSavedPosts();
+          break;
+        case 'LPT_DO_LIKE':
+          result = await doLike(message.urn);
+          break;
+        case 'LPT_IS_SAVED':
+          result = await isSaved(message.urn);
+          break;
+        case 'LPT_DO_UNSAVE':
+          result = await doUnsave(message.urn);
+          break;
+        case 'LPT_INSERT_COMMENT':
+          result = await insertCommentDraft(message.urn, message.text);
+          break;
+        case 'LPT_SUBMIT_COMMENT':
+          result = await submitComment(message.urn);
+          break;
+        default:
+          result = { ok: false, error: `unknown message type: ${message.type}` };
+      }
+    } catch (err) {
+      // A handler throwing (rather than returning { ok: false }) would
+      // otherwise leave the side panel's sendMessage call hanging with no
+      // response — surface it as a normal failure instead, and log it.
+      result = { ok: false, error: `${message.type} threw: ${err?.message || err}` };
     }
+    if (!result.ok) logError('onMessage', message.type, result.error);
+    sendResponse(result);
   })();
   return true; // keep the channel open for the async response
 });

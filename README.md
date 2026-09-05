@@ -63,6 +63,17 @@ fields, so you can type your own read on a post instead of generating one.
 Clicking an AI button with no key set just shows a banner telling you so —
 it never blocks or breaks the rest of the flow.
 
+## Debugging
+
+The **Logs** button in the toolbar opens a persisted debug log (newest
+last) covering scans, classification calls, and every LinkedIn DOM action
+across both the side panel and `content.js` — useful because those two run
+in different contexts (the side panel's own devtools vs. the LinkedIn tab's
+devtools) and a failure banner alone often doesn't say enough. Copy it
+straight into a bug report; Clear resets it. It's a rolling buffer of the
+last 300 entries in `chrome.storage.local`, not a live console — the same
+messages are still `console.log`ged too if you do have devtools open.
+
 ## Architecture
 
 - `src/content/content.js` — runs on the saved-posts list and individual

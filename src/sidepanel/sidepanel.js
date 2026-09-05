@@ -2,6 +2,9 @@ import { getAllPosts, upsertPost, mergeScraped, getSettings, getActiveCredential
 import { classifyPost, draftComment, PROVIDER_LABELS } from '../lib/ai-client.js';
 import { POST_TYPES, TYPE_LABELS } from '../lib/prompts.js';
 import { downloadWorkbook } from '../lib/xlsx-export.js';
+import { makeLogger, getLogEntries, clearLogEntries } from '../lib/logger.js';
+
+const logger = makeLogger('sidepanel');
 
 const ACTION_LABELS = {
   like: 'Like',
@@ -97,15 +100,18 @@ async function waitForTabComplete(tabId, timeoutMs = 15000) {
 
 async function sendToLinkedInTabs(message) {
   const tabs = await getLinkedInTabs();
+  logger.log('sendToLinkedInTabs', message.type, `${tabs.length} candidate tab(s)`);
   if (!tabs.length) return { ok: false, error: 'no LinkedIn tab is open' };
   let last = { ok: false, error: 'no matching tab responded' };
   for (const tab of tabs) {
     try {
       await ensureContentScript(tab.id);
       const res = await chrome.tabs.sendMessage(tab.id, message);
+      logger.log('sendToLinkedInTabs', message.type, 'tab', tab.id, '→', JSON.stringify(res));
       if (res && res.ok) return res;
       if (res) last = res;
     } catch (err) {
+      logger.error('sendToLinkedInTabs', message.type, 'tab', tab.id, 'threw', err);
       last = { ok: false, error: String(err) };
     }
   }
@@ -130,7 +136,8 @@ document.getElementById('scanBtn').addEventListener('click', async () => {
   await new Promise((r) => setTimeout(r, 1200));
   const res = await sendToLinkedInTabs({ type: 'LPT_SCRAPE_SAVED_POSTS' });
   if (!res.ok) {
-    setBanner(`Scan failed: ${res.error}`);
+    logger.error('scan', res.error);
+    setBanner(`Scan failed: ${res.error} (see Logs for details)`);
     return;
   }
   const added = await mergeScraped(res.posts);
@@ -165,7 +172,7 @@ document.getElementById('classifyAllBtn').addEventListener('click', async () => 
       await upsertPost(post);
     } catch (err) {
       failed++;
-      console.error('classify failed', post.id, err);
+      logger.error('classifyAll', post.id, err);
     }
   }
   setBanner(failed ? `Done, ${failed} failed — check the API key/model in Settings.` : 'Classification complete.');
@@ -177,6 +184,40 @@ document.getElementById('exportBtn').addEventListener('click', async () => {
 });
 
 document.getElementById('settingsBtn').addEventListener('click', () => chrome.runtime.openOptionsPage());
+
+const logsPanelEl = document.getElementById('logsPanel');
+const logsContentEl = document.getElementById('logsContent');
+
+async function renderLogs() {
+  const entries = await getLogEntries();
+  logsContentEl.textContent = entries.length
+    ? entries.map((e) => `[${e.ts}] ${e.level.toUpperCase().padEnd(5)} ${e.source}: ${e.message}`).join('\n')
+    : '(no log entries yet)';
+  logsContentEl.scrollTop = logsContentEl.scrollHeight;
+}
+
+document.getElementById('logsBtn').addEventListener('click', async () => {
+  logsPanelEl.hidden = !logsPanelEl.hidden;
+  if (!logsPanelEl.hidden) await renderLogs();
+});
+
+document.getElementById('logsCloseBtn').addEventListener('click', () => {
+  logsPanelEl.hidden = true;
+});
+
+document.getElementById('logsClearBtn').addEventListener('click', async () => {
+  await clearLogEntries();
+  await renderLogs();
+});
+
+document.getElementById('logsCopyBtn').addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(logsContentEl.textContent);
+    setBanner('Log copied to clipboard.');
+  } catch (err) {
+    setBanner(`Copy failed: ${err.message}`);
+  }
+});
 
 document.querySelectorAll('.tab-btn').forEach((btn) => {
   btn.addEventListener('click', () => {
@@ -222,29 +263,39 @@ async function reclassify(post) {
   settings = settings || (await getSettings());
   const creds = getActiveCredentials(settings);
   if (!creds.apiKey) return setBanner(`Set an API key for ${PROVIDER_LABELS[creds.provider]} in Settings first, or just fill this in by hand.`);
-  post.classification = await classifyPost({
-    ...creds,
-    author: post.author,
-    authorHeadline: post.authorHeadline,
-    postText: post.postText,
-    projects: settings.projects,
-  });
-  post.classifiedAt = new Date().toISOString();
-  await upsertPost(post);
-  await refresh();
+  try {
+    post.classification = await classifyPost({
+      ...creds,
+      author: post.author,
+      authorHeadline: post.authorHeadline,
+      postText: post.postText,
+      projects: settings.projects,
+    });
+    post.classifiedAt = new Date().toISOString();
+    await upsertPost(post);
+    await refresh();
+  } catch (err) {
+    logger.error('reclassify', post.id, err);
+    setBanner(`Classify failed: ${err.message} (see Logs for details)`);
+  }
 }
 
 async function suggestComment(post) {
   settings = settings || (await getSettings());
   const creds = getActiveCredentials(settings);
   if (!creds.apiKey) return setBanner(`Set an API key for ${PROVIDER_LABELS[creds.provider]} in Settings first, or just fill this in by hand.`);
-  post.commentDraft = await draftComment({
-    ...creds,
-    postText: post.postText,
-    classification: post.classification,
-  });
-  await upsertPost(post);
-  await refresh();
+  try {
+    post.commentDraft = await draftComment({
+      ...creds,
+      postText: post.postText,
+      classification: post.classification,
+    });
+    await upsertPost(post);
+    await refresh();
+  } catch (err) {
+    logger.error('suggestComment', post.id, err);
+    setBanner(`Suggest comment failed: ${err.message} (see Logs for details)`);
+  }
 }
 
 // Only path that publishes anything: fills the box, then requires an explicit
