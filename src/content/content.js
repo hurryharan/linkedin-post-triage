@@ -163,8 +163,19 @@ async function expandTruncatedText(container) {
   }
 }
 
+// LinkedIn's saved-posts list is virtualized/lazy-rendered — a single
+// querySelectorAll right after the tab reports "complete" can catch the page
+// before any post has actually painted. Poll for a while instead of a single
+// snapshot before concluding there's nothing there.
+async function waitForContainers() {
+  return waitFor(() => {
+    const found = document.querySelectorAll(SELECTORS.postContainer);
+    return found.length ? found : null;
+  }, { timeout: 8000, interval: 250 }) || [];
+}
+
 async function scrapeSavedPosts() {
-  const containers = Array.from(document.querySelectorAll(SELECTORS.postContainer));
+  const containers = Array.from(await waitForContainers());
   const results = [];
   const errors = [];
   for (const container of containers) {
@@ -176,6 +187,13 @@ async function scrapeSavedPosts() {
     } catch (err) {
       errors.push(String(err));
     }
+  }
+  if (!containers.length) {
+    // Nothing matched even after waiting — likely a genuine selector
+    // mismatch rather than a timing issue. Log enough of the page to
+    // diagnose which of SELECTORS.postContainer's variants broke.
+    const anyUrn = document.querySelectorAll('[data-urn]').length;
+    log('scrapeSavedPosts', `no containers found; readyState=${document.readyState}, any [data-urn] elements=${anyUrn}, url=${location.href}`);
   }
   log('scrapeSavedPosts', `found ${containers.length} container(s), ${results.length} parsed, ${errors.length} failed`);
   return { ok: true, posts: results, errors, containerCount: containers.length };
