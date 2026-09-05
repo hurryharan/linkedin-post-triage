@@ -1,0 +1,35 @@
+{
+  "manifest_version": 3,
+  "name": "LinkedIn Post Triage",
+  "version": "0.1.0",
+  "description": "Classify, review, and act on saved LinkedIn posts without leaving the browser.",
+  "permissions": ["storage", "unlimitedStorage", "tabs", "sidePanel", "downloads"],
+  "host_permissions": ["*://*.linkedin.com/*", "https://api.anthropic.com/*"],
+  "background": {
+    "service_worker": "src/background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "LinkedIn Post Triage"
+  },
+  "side_panel": {
+    "default_path": "src/sidepanel/sidepanel.html"
+  },
+  "options_page": "src/options/options.html",
+  "content_scripts": [
+    {
+      "matches": [
+        "*://www.linkedin.com/my-items/saved-posts/*",
+        "*://www.linkedin.com/feed/update/*"
+      ],
+      "js": ["src/content/content.js"],
+      "css": ["src/content/content.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

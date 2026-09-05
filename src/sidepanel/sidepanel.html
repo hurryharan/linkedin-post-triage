@@ -1,0 +1,29 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>LinkedIn Post Triage</title>
+<link rel="stylesheet" href="sidepanel.css" />
+</head>
+<body>
+  <header>
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="pending">Pending</button>
+      <button class="tab-btn" data-tab="processed">Processed</button>
+    </div>
+    <div class="toolbar">
+      <button id="scanBtn">Scan saved posts</button>
+      <button id="classifyAllBtn">Classify all pending</button>
+      <button id="exportBtn">Export .xlsx</button>
+      <button id="settingsBtn" title="Settings">⚙</button>
+    </div>
+  </header>
+
+  <div id="banner" class="banner" hidden></div>
+  <div id="list" class="list"></div>
+
+  <!-- Vendored SheetJS (Apache-2.0, see vendor/XLSX-LICENSE), classic script for the global XLSX. -->
+  <script src="../../vendor/xlsx.core.min.js"></script>
+  <script type="module" src="sidepanel.js"></script>
+</body>
+</html>

@@ -1,0 +1,43 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>LinkedIn Post Triage — Settings</title>
+<style>
+  body { font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; max-width: 520px; margin: 32px auto; color: #1a1a1a; }
+  h1 { font-size: 18px; }
+  label { display: block; margin-top: 16px; font-weight: 600; }
+  input[type="password"], input[type="text"], select { width: 100%; padding: 8px; margin-top: 4px; box-sizing: border-box; font-size: 13px; }
+  .hint { color: #666; font-size: 12px; margin-top: 4px; }
+  button { margin-top: 16px; padding: 8px 16px; margin-right: 8px; }
+  #status { margin-top: 12px; font-size: 13px; }
+  #status.ok { color: #0a7d33; }
+  #status.err { color: #b3261e; }
+</style>
+</head>
+<body>
+  <h1>LinkedIn Post Triage — Settings</h1>
+
+  <label for="apiKey">Anthropic API key</label>
+  <input type="password" id="apiKey" placeholder="sk-ant-..." autocomplete="off" />
+  <div class="hint">Stored locally in this browser profile only (chrome.storage.local). Never synced or sent anywhere but api.anthropic.com.</div>
+
+  <label for="model">Model</label>
+  <select id="model">
+    <option value="claude-haiku-4-5-20251001">claude-haiku-4-5-20251001 (fast/cheap — recommended for classification)</option>
+    <option value="claude-sonnet-5">claude-sonnet-5</option>
+  </select>
+
+  <label for="projects">Known projects/areas (comma-separated)</label>
+  <input type="text" id="projects" placeholder="Samyog, Expat Taxes, Fixed Income, ..." />
+  <div class="hint">Used to steer classification's "project" field. Posts that don't match any will be classified as "Other" with a free-text label.</div>
+
+  <div>
+    <button id="save">Save</button>
+    <button id="test">Test connection</button>
+  </div>
+  <div id="status"></div>
+
+  <script type="module" src="options.js"></script>
+</body>
+</html>
