@@ -1,8 +1,9 @@
 # LinkedIn Post Triage
 
 Manifest V3 Chrome extension for personal use: pulls your LinkedIn saved
-posts, classifies each with a direct Claude API call, lets you review and
-pick actions, and keeps a local record you can export to `.xlsx`. v1 of the
+posts, classifies each with a direct call to Claude or OpenAI (your choice),
+lets you review and pick actions, and keeps a local record you can export to
+`.xlsx`. v1 of the
 pipeline described in [`docs/PRD.md`](docs/PRD.md) — replaces the Cowork-artifact prototype
 with something that costs roughly an order of magnitude less per post
 (no screenshots, no page-text dumps, no agent-turn overhead).
@@ -12,8 +13,11 @@ with something that costs roughly an order of magnitude less per post
 1. `chrome://extensions` → enable **Developer mode** → **Load unpacked** →
    select this repo's root folder.
 2. Click the extension's icon once to pin it, then open its **Details →
-   Extension options** (or right-click the icon → Options) and enter your
-   Anthropic API key. Click **Test connection** to confirm it works.
+   Extension options** (or right-click the icon → Options), pick a
+   **provider** (Anthropic or OpenAI), and enter that provider's API key.
+   Click **Test connection** to confirm it works. Both providers' keys are
+   kept in storage regardless of which is active, so switching later doesn't
+   lose either one.
 3. Click the toolbar icon to open the side panel.
 
 ## Using it
@@ -22,9 +26,10 @@ with something that costs roughly an order of magnitude less per post
    which opens it for you).
 2. **Scan saved posts** — reads post data straight from the DOM and adds any
    new posts to local storage as *pending*.
-3. **Classify all pending** (or **Classify** on the current card) — one
-   Claude API call per post, forced into a structured tool-call response
-   (topic, summary, why-saved, project, type). Project/type default to a
+3. **Classify all pending** (or **Classify** on the current card) — one API
+   call per post to whichever provider is active in Settings, forced into a
+   structured tool/function-call response (topic, summary, why-saved,
+   project, type). Project/type default to a
    fixed list (Niti, Hetu, iSPIRT, Samyog, DEPA, Investing, Personal,
    Learning, GTM / Insight, Person, Company, News, Content inspiration,
    Research, Other) — edit the project list in Settings.
@@ -59,11 +64,13 @@ with something that costs roughly an order of magnitude less per post
 - `src/sidepanel/` — the review UI. Talks to `chrome.storage.local`
   directly and relays DOM actions to whichever open LinkedIn tab can handle
   them via `chrome.tabs.sendMessage`.
-- `src/lib/claude-client.js` — direct `fetch` calls to the Anthropic
-  Messages API (classification uses forced tool-use for structured output;
-  comment drafting is a plain text completion). No SDK, no browser tooling,
-  no conversation history — this is where the token savings over the Cowork
-  prototype come from.
+- `src/lib/ai-client.js` — provider-agnostic dispatcher; `getSettings()`'s
+  `provider` field picks which of `src/lib/providers/anthropic-client.js` or
+  `openai-client.js` actually handles a call. Both are direct `fetch` calls
+  (Anthropic Messages API / OpenAI Chat Completions), classification forced
+  into a tool/function call for structured output, comment drafting a plain
+  text completion. No SDK, no browser tooling, no conversation history —
+  this is where the token savings over the Cowork prototype come from.
 - `src/lib/storage.js` — one `chrome.storage.local` blob keyed by post
   URN/URL. Fine at personal-backlog scale; if this ever needs to be shared
   across machines, see "Later" in the PRD (small local backend).
@@ -92,7 +99,7 @@ with something that costs roughly an order of magnitude less per post
   out) is ever fooled by a DOM change, a comment could appear posted when
   it wasn't, or vice versa — spot-check occasionally rather than trusting
   the "posted ✓" pill blindly at first.
-- **API key lives in `chrome.storage.local` via the options page**, in
+- **API keys live in `chrome.storage.local` via the options page**, in
   plaintext, readable by anything with access to your Chrome profile. Fine
   for personal, single-machine use only — never package this for anyone
   else as-is.

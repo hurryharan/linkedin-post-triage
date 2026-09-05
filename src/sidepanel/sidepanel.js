@@ -1,5 +1,5 @@
-import { getAllPosts, upsertPost, mergeScraped, getSettings, getQueueState, setQueueState, ACTION_KEYS } from '../lib/storage.js';
-import { classifyPost, draftComment } from '../lib/claude-client.js';
+import { getAllPosts, upsertPost, mergeScraped, getSettings, getActiveCredentials, getQueueState, setQueueState, ACTION_KEYS } from '../lib/storage.js';
+import { classifyPost, draftComment } from '../lib/ai-client.js';
 import { POST_TYPES, TYPE_LABELS } from '../lib/prompts.js';
 import { downloadWorkbook } from '../lib/xlsx-export.js';
 
@@ -106,8 +106,9 @@ document.getElementById('scanBtn').addEventListener('click', async () => {
 
 document.getElementById('classifyAllBtn').addEventListener('click', async () => {
   settings = await getSettings();
-  if (!settings.apiKey) {
-    setBanner('Set an Anthropic API key in Settings first.');
+  const creds = getActiveCredentials(settings);
+  if (!creds.apiKey) {
+    setBanner(`Set an API key for ${creds.provider} in Settings first.`);
     return;
   }
   const targets = posts.filter((p) => p.status === 'pending' && !p.classification);
@@ -116,8 +117,7 @@ document.getElementById('classifyAllBtn').addEventListener('click', async () => 
   for (const post of targets) {
     try {
       post.classification = await classifyPost({
-        apiKey: settings.apiKey,
-        model: settings.model,
+        ...creds,
         author: post.author,
         authorHeadline: post.authorHeadline,
         postText: post.postText,
@@ -182,10 +182,10 @@ async function maybeAutoUnsave(post) {
 
 async function reclassify(post) {
   settings = settings || (await getSettings());
-  if (!settings.apiKey) return setBanner('Set an Anthropic API key in Settings first.');
+  const creds = getActiveCredentials(settings);
+  if (!creds.apiKey) return setBanner(`Set an API key for ${creds.provider} in Settings first.`);
   post.classification = await classifyPost({
-    apiKey: settings.apiKey,
-    model: settings.model,
+    ...creds,
     author: post.author,
     authorHeadline: post.authorHeadline,
     postText: post.postText,
@@ -198,10 +198,10 @@ async function reclassify(post) {
 
 async function suggestComment(post) {
   settings = settings || (await getSettings());
-  if (!settings.apiKey) return setBanner('Set an Anthropic API key in Settings first.');
+  const creds = getActiveCredentials(settings);
+  if (!creds.apiKey) return setBanner(`Set an API key for ${creds.provider} in Settings first.`);
   post.commentDraft = await draftComment({
-    apiKey: settings.apiKey,
-    model: settings.model,
+    ...creds,
     postText: post.postText,
     classification: post.classification,
   });

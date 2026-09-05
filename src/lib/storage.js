@@ -1,4 +1,5 @@
 import { DEFAULT_PROJECTS } from './prompts.js';
+import { PROVIDERS } from './ai-client.js';
 
 // Single-blob storage: chrome.storage.local key -> { [id]: PostRecord }.
 // Fine at personal-backlog scale (low thousands of posts); revisit if it ever grows past that.
@@ -99,19 +100,48 @@ export async function removePost(id) {
   await writeAll(map);
 }
 
+function defaultSettings() {
+  return {
+    provider: 'anthropic',
+    anthropicApiKey: '',
+    anthropicModel: PROVIDERS.anthropic.DEFAULT_MODEL,
+    openaiApiKey: '',
+    openaiModel: PROVIDERS.openai.DEFAULT_MODEL,
+    projects: DEFAULT_PROJECTS,
+  };
+}
+
 export async function getSettings() {
   const data = await chrome.storage.local.get(SETTINGS_KEY);
-  return (
-    data[SETTINGS_KEY] || {
-      apiKey: '',
-      model: 'claude-haiku-4-5-20251001',
-      projects: DEFAULT_PROJECTS,
-    }
-  );
+  const stored = data[SETTINGS_KEY];
+  if (!stored) return defaultSettings();
+  // Migrate the pre-multi-provider schema (flat apiKey/model, Anthropic-only).
+  if (stored.apiKey !== undefined || stored.model !== undefined) {
+    const { apiKey, model, ...rest } = stored;
+    return {
+      ...defaultSettings(),
+      ...rest,
+      provider: 'anthropic',
+      anthropicApiKey: apiKey || '',
+      anthropicModel: model || PROVIDERS.anthropic.DEFAULT_MODEL,
+    };
+  }
+  return { ...defaultSettings(), ...stored };
 }
 
 export async function setSettings(settings) {
   await chrome.storage.local.set({ [SETTINGS_KEY]: settings });
+}
+
+// Resolves whichever provider is active into the {provider, apiKey, model}
+// shape ai-client.js's functions expect, so callers don't branch themselves.
+export function getActiveCredentials(settings) {
+  const provider = settings.provider || 'anthropic';
+  return {
+    provider,
+    apiKey: provider === 'openai' ? settings.openaiApiKey : settings.anthropicApiKey,
+    model: provider === 'openai' ? settings.openaiModel : settings.anthropicModel,
+  };
 }
 
 // Tracks which pending post the one-at-a-time review queue is currently on,

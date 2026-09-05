@@ -13,20 +13,46 @@
   #status { margin-top: 12px; font-size: 13px; }
   #status.ok { color: #0a7d33; }
   #status.err { color: #b3261e; }
+  .provider-block { border: 1px solid #e0e0e0; border-radius: 6px; padding: 4px 12px 12px; margin-top: 16px; }
+  .provider-block.inactive { opacity: 0.55; }
+  .provider-block h2 { font-size: 13px; margin: 12px 0 0; }
 </style>
 </head>
 <body>
   <h1>LinkedIn Post Triage — Settings</h1>
 
-  <label for="apiKey">Anthropic API key</label>
-  <input type="password" id="apiKey" placeholder="sk-ant-..." autocomplete="off" />
-  <div class="hint">Stored locally in this browser profile only (chrome.storage.local). Never synced or sent anywhere but api.anthropic.com.</div>
-
-  <label for="model">Model</label>
-  <select id="model">
-    <option value="claude-haiku-4-5-20251001">claude-haiku-4-5-20251001 (fast/cheap — recommended for classification)</option>
-    <option value="claude-sonnet-5">claude-sonnet-5</option>
+  <label for="provider">AI provider</label>
+  <select id="provider">
+    <option value="anthropic">Anthropic (Claude)</option>
+    <option value="openai">OpenAI</option>
   </select>
+  <div class="hint">Whichever is selected here is what Classify/Suggest comment actually calls. Both providers' keys are kept, so switching back and forth doesn't lose either one.</div>
+
+  <div class="provider-block" id="anthropicBlock">
+    <h2>Anthropic</h2>
+    <label for="anthropicApiKey">API key</label>
+    <input type="password" id="anthropicApiKey" placeholder="sk-ant-..." autocomplete="off" />
+    <label for="anthropicModel">Model</label>
+    <input type="text" id="anthropicModel" list="anthropicModels" />
+    <datalist id="anthropicModels">
+      <option value="claude-haiku-4-5-20251001">fast/cheap — recommended for classification</option>
+      <option value="claude-sonnet-5"></option>
+    </datalist>
+  </div>
+
+  <div class="provider-block" id="openaiBlock">
+    <h2>OpenAI</h2>
+    <label for="openaiApiKey">API key</label>
+    <input type="password" id="openaiApiKey" placeholder="sk-..." autocomplete="off" />
+    <label for="openaiModel">Model</label>
+    <input type="text" id="openaiModel" list="openaiModels" />
+    <datalist id="openaiModels">
+      <option value="gpt-4o-mini">fast/cheap — recommended for classification</option>
+      <option value="gpt-4o"></option>
+    </datalist>
+  </div>
+
+  <div class="hint" style="margin-top: 8px;">Keys are stored locally in this browser profile only (chrome.storage.local). Each is sent only to its own provider's API.</div>
 
   <label for="projects">Known projects/areas (comma-separated)</label>
   <input type="text" id="projects" placeholder="Niti, Hetu, iSPIRT, Samyog, DEPA, Investing, Personal, Learning, GTM" />

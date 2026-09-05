@@ -1,7 +1,10 @@
-import { classifySystemPrompt, COMMENT_SYSTEM_PROMPT, POST_TYPES } from './prompts.js';
+import { classifySystemPrompt, COMMENT_SYSTEM_PROMPT, POST_TYPES } from '../prompts.js';
 
 const API_URL = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_VERSION = '2023-06-01';
+
+export const DEFAULT_MODEL = 'claude-haiku-4-5-20251001';
+export const SUGGESTED_MODELS = ['claude-haiku-4-5-20251001', 'claude-sonnet-5'];
 
 class ClaudeApiError extends Error {}
 
@@ -81,7 +84,7 @@ export async function draftComment({ apiKey, model, postText, classification }) 
   return textBlock ? textBlock.text.trim() : '';
 }
 
-export async function testApiKey(apiKey, model) {
+export async function testApiKey({ apiKey, model }) {
   await callMessages(apiKey, {
     model,
     max_tokens: 8,
