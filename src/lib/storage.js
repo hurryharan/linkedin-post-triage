@@ -1,7 +1,10 @@
+import { DEFAULT_PROJECTS } from './prompts.js';
+
 // Single-blob storage: chrome.storage.local key -> { [id]: PostRecord }.
 // Fine at personal-backlog scale (low thousands of posts); revisit if it ever grows past that.
 const STORE_KEY = 'ltp_posts_v1';
 const SETTINGS_KEY = 'ltp_settings_v1';
+const QUEUE_KEY = 'ltp_queue_state_v1';
 
 export const ACTION_KEYS = ['like', 'comment', 'crm', 'research', 'post_idea', 'repost'];
 
@@ -16,17 +19,22 @@ export function newRecord(scraped) {
     url: scraped.url || null,
     urn: scraped.urn || null,
     author: scraped.author || null,
+    authorProfileUrl: scraped.authorProfileUrl || null,
     authorHeadline: scraped.authorHeadline || null,
     company: scraped.company || null,
+    companyUrl: scraped.companyUrl || null,
     postedRelative: scraped.postedRelative || null,
+    postDateTime: scraped.postDateTime || null,
+    engagementMetrics: scraped.engagementMetrics || null,
     savedConfirmed: !!scraped.savedConfirmed,
     postText: scraped.postText || '',
-    attachment: scraped.attachment || null,
+    mediaInfo: scraped.mediaInfo || null,
     domError: scraped.domError || null,
     classification: null, // { topic, summary, whySaved, project, projectCustom, type }
     actions: emptyActionMap(),
     priority: 3,
     commentDraft: '',
+    commentPosted: null,
     manualDone: emptyActionMap(),
     unsaveStatus: 'pending', // pending | done | failed
     reviewStatus: 'unreviewed', // unreviewed | reviewed
@@ -50,7 +58,7 @@ async function writeAll(map) {
 
 export async function getAllPosts() {
   const map = await readAll();
-  return Object.values(map).sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+  return Object.values(map).sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
 }
 
 export async function getPost(id) {
@@ -97,11 +105,22 @@ export async function getSettings() {
     data[SETTINGS_KEY] || {
       apiKey: '',
       model: 'claude-haiku-4-5-20251001',
-      projects: [],
+      projects: DEFAULT_PROJECTS,
     }
   );
 }
 
 export async function setSettings(settings) {
   await chrome.storage.local.set({ [SETTINGS_KEY]: settings });
+}
+
+// Tracks which pending post the one-at-a-time review queue is currently on,
+// so reopening the side panel resumes there instead of restarting.
+export async function getQueueState() {
+  const data = await chrome.storage.local.get(QUEUE_KEY);
+  return data[QUEUE_KEY] || { currentId: null };
+}
+
+export async function setQueueState(state) {
+  await chrome.storage.local.set({ [QUEUE_KEY]: state });
 }

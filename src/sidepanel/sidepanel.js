@@ -1,6 +1,6 @@
-import { getAllPosts, upsertPost, mergeScraped, getSettings, ACTION_KEYS } from '../lib/storage.js';
+import { getAllPosts, upsertPost, mergeScraped, getSettings, getQueueState, setQueueState, ACTION_KEYS } from '../lib/storage.js';
 import { classifyPost, draftComment } from '../lib/claude-client.js';
-import { POST_TYPES } from '../lib/prompts.js';
+import { POST_TYPES, TYPE_LABELS } from '../lib/prompts.js';
 import { downloadWorkbook } from '../lib/xlsx-export.js';
 
 const ACTION_LABELS = {
@@ -17,6 +17,8 @@ const bannerEl = document.getElementById('banner');
 let activeTab = 'pending';
 let posts = [];
 let settings = null;
+let queueState = { currentId: null };
+let lastPendingIndex = 0;
 
 function setBanner(msg) {
   if (!msg) {
@@ -30,6 +32,27 @@ function setBanner(msg) {
 async function refresh() {
   posts = await getAllPosts();
   render();
+}
+
+function pendingQueue() {
+  return posts.filter((p) => p.status === 'pending');
+}
+
+// Keeps the queue pointer valid after a scan, a post finishing, etc. If the
+// remembered post is gone, hold the same list position rather than resetting
+// to the front, so completing post 5 of 12 lands you on the new post 5.
+function resolveCurrentIndex(queue, previousIndex = 0) {
+  if (!queue.length) return -1;
+  const idx = queueState.currentId ? queue.findIndex((p) => p.id === queueState.currentId) : -1;
+  if (idx >= 0) return idx;
+  return Math.min(previousIndex, queue.length - 1);
+}
+
+async function goToIndex(queue, index) {
+  const clamped = Math.max(0, Math.min(index, queue.length - 1));
+  lastPendingIndex = clamped;
+  queueState = { currentId: queue[clamped]?.id || null };
+  await setQueueState(queueState);
 }
 
 // --- Linked-in tab plumbing -------------------------------------------------
@@ -61,12 +84,11 @@ async function ensureSavedPostsTab() {
   return chrome.tabs.create({ url: 'https://www.linkedin.com/my-items/saved-posts/' });
 }
 
-// --- Actions -----------------------------------------------------------------
+// --- Toolbar actions ---------------------------------------------------------
 
 document.getElementById('scanBtn').addEventListener('click', async () => {
   setBanner('Scanning saved posts…');
   const tab = await ensureSavedPostsTab();
-  // Give a freshly-opened tab a moment to load before scraping.
   await new Promise((r) => setTimeout(r, tab.status === 'complete' ? 100 : 2500));
   const res = await sendToLinkedInTabs({ type: 'LPT_SCRAPE_SAVED_POSTS' });
   if (!res.ok) {
@@ -93,7 +115,7 @@ document.getElementById('classifyAllBtn').addEventListener('click', async () => 
   let failed = 0;
   for (const post of targets) {
     try {
-      const classification = await classifyPost({
+      post.classification = await classifyPost({
         apiKey: settings.apiKey,
         model: settings.model,
         author: post.author,
@@ -101,7 +123,6 @@ document.getElementById('classifyAllBtn').addEventListener('click', async () => 
         postText: post.postText,
         projects: settings.projects,
       });
-      post.classification = classification;
       post.classifiedAt = new Date().toISOString();
       await upsertPost(post);
     } catch (err) {
@@ -114,8 +135,7 @@ document.getElementById('classifyAllBtn').addEventListener('click', async () => 
 });
 
 document.getElementById('exportBtn').addEventListener('click', async () => {
-  const all = await getAllPosts();
-  downloadWorkbook(all);
+  downloadWorkbook(await getAllPosts());
 });
 
 document.getElementById('settingsBtn').addEventListener('click', () => chrome.runtime.openOptionsPage());
@@ -154,6 +174,8 @@ async function maybeAutoUnsave(post) {
   if (res.ok) {
     post.status = 'processed';
     post.processedAt = new Date().toISOString();
+  } else {
+    setBanner(`Couldn't verify unsave: ${res.error}. Left in Pending.`);
   }
   await upsertPost(post);
 }
@@ -161,7 +183,7 @@ async function maybeAutoUnsave(post) {
 async function reclassify(post) {
   settings = settings || (await getSettings());
   if (!settings.apiKey) return setBanner('Set an Anthropic API key in Settings first.');
-  const classification = await classifyPost({
+  post.classification = await classifyPost({
     apiKey: settings.apiKey,
     model: settings.model,
     author: post.author,
@@ -169,7 +191,6 @@ async function reclassify(post) {
     postText: post.postText,
     projects: settings.projects,
   });
-  post.classification = classification;
   post.classifiedAt = new Date().toISOString();
   await upsertPost(post);
   await refresh();
@@ -185,6 +206,34 @@ async function suggestComment(post) {
     classification: post.classification,
   });
   await upsertPost(post);
+  await refresh();
+}
+
+// Only path that publishes anything: fills the box, then requires an explicit
+// confirm before the content script clicks Post, then verifies it went through.
+async function postCommentNow(post) {
+  if (!post.commentDraft || !post.commentDraft.trim()) {
+    setBanner('Write or suggest a comment first.');
+    return;
+  }
+  if (!confirm(`Post this comment to LinkedIn now?\n\n"${post.commentDraft}"`)) return;
+
+  setBanner('Posting comment…');
+  const insertRes = await sendToLinkedInTabs({ type: 'LPT_INSERT_COMMENT', urn: post.urn, text: post.commentDraft });
+  if (!insertRes.ok) {
+    setBanner(`Comment not posted — couldn't open the comment box: ${insertRes.error}`);
+    return;
+  }
+  const submitRes = await sendToLinkedInTabs({ type: 'LPT_SUBMIT_COMMENT', urn: post.urn });
+  if (!submitRes.ok) {
+    setBanner(`Comment drafted on LinkedIn but posting failed: ${submitRes.error}. Check the post directly.`);
+    return;
+  }
+  post.commentPosted = post.commentDraft;
+  post.manualDone.comment = true;
+  await upsertPost(post);
+  setBanner('Comment posted and verified.');
+  await maybeAutoUnsave(post);
   await refresh();
 }
 
@@ -230,8 +279,13 @@ function typeOptions(post) {
         await upsertPost(post);
       },
     },
-    POST_TYPES.map((t) => el('option', { value: t, ...(t === current ? { selected: 'selected' } : {}) }, [t]))
+    POST_TYPES.map((t) => el('option', { value: t, ...(t === current ? { selected: 'selected' } : {}) }, [TYPE_LABELS[t] || t]))
   );
+}
+
+function metaLine(post) {
+  const parts = [post.company, post.postDateTime || post.postedRelative, post.engagementMetrics].filter(Boolean);
+  return parts.join(' · ');
 }
 
 function renderCard(post) {
@@ -239,12 +293,18 @@ function renderCard(post) {
   const textEl = el('div', { class: 'post-text' }, [post.postText || '(no text captured)']);
   textEl.addEventListener('click', () => textEl.classList.toggle('expanded'));
 
+  const authorLine = [
+    post.authorProfileUrl ? el('a', { href: post.authorProfileUrl, target: '_blank' }, [post.author || 'Unknown author']) : el('span', {}, [post.author || 'Unknown author']),
+  ];
   const header = el('div', { class: 'card-header' }, [
-    el('span', { class: 'author' }, [post.author || 'Unknown author']),
-    el('span', { class: 'meta' }, [post.company || post.postedRelative || '']),
+    el('span', { class: 'author' }, authorLine),
+    el('span', { class: 'meta' }, [metaLine(post)]),
   ]);
 
-  const link = post.url ? el('div', {}, [el('a', { href: post.url, target: '_blank' }, ['Open on LinkedIn ↗'])]) : null;
+  const links = el('div', { class: 'meta' }, [
+    post.url ? el('a', { href: post.url, target: '_blank' }, ['Open post ↗']) : '',
+    post.mediaInfo ? ` · ${post.mediaInfo}` : '',
+  ]);
 
   const classificationBlock = post.classification
     ? el('div', {}, [
@@ -278,6 +338,7 @@ function renderCard(post) {
           onchange: async (e) => {
             post.actions[key] = e.target.checked;
             await upsertPost(post);
+            render();
           },
         }),
         ACTION_LABELS[key],
@@ -290,21 +351,23 @@ function renderCard(post) {
     ? el(
         'div',
         { class: 'done-row' },
-        selectedActions.map((key) =>
-          el('label', { class: 'action-chip' }, [
-            el('input', {
-              type: 'checkbox',
-              ...(post.manualDone[key] ? { checked: 'checked' } : {}),
-              onchange: async (e) => {
-                post.manualDone[key] = e.target.checked;
-                await upsertPost(post);
-                await maybeAutoUnsave(post);
-                await refresh();
-              },
-            }),
-            `${ACTION_LABELS[key]} done`,
-          ])
-        )
+        selectedActions
+          .filter((key) => key !== 'comment') // comment's "done" is set by postCommentNow, not a manual tick
+          .map((key) =>
+            el('label', { class: 'action-chip' }, [
+              el('input', {
+                type: 'checkbox',
+                ...(post.manualDone[key] ? { checked: 'checked' } : {}),
+                onchange: async (e) => {
+                  post.manualDone[key] = e.target.checked;
+                  await upsertPost(post);
+                  await maybeAutoUnsave(post);
+                  await refresh();
+                },
+              }),
+              `${ACTION_LABELS[key]} done`,
+            ])
+          )
       )
     : null;
 
@@ -325,7 +388,7 @@ function renderCard(post) {
             }
           },
         },
-        ['Like it now']
+        [post.manualDone.like ? 'Liked ✓' : 'Like it now']
       )
     : null;
 
@@ -333,24 +396,15 @@ function renderCard(post) {
     ? el('div', { class: 'comment-drawer' }, [
         el('label', { class: 'field-label' }, ['Comment draft']),
         textareaField(post, 'commentDraft', true),
+        post.commentPosted ? el('div', { class: 'status-pill' }, ['posted ✓']) : null,
         el('div', { class: 'card-footer' }, [
           el('span', {}, []),
           el('div', { class: 'btns' }, [
             el('button', { class: 'small', onclick: () => suggestComment(post) }, ['Suggest comment']),
-            el(
-              'button',
-              {
-                class: 'small',
-                onclick: async () => {
-                  const res = await sendToLinkedInTabs({ type: 'LPT_INSERT_COMMENT', urn: post.urn, text: post.commentDraft || '' });
-                  setBanner(res.ok ? 'Comment inserted — review and click Post on LinkedIn.' : `Insert failed: ${res.error}`);
-                },
-              },
-              ['Insert into LinkedIn']
-            ),
+            el('button', { class: 'small primary', onclick: () => postCommentNow(post) }, ['Confirm & post']),
           ]),
         ]),
-      ])
+      ].filter(Boolean))
     : null;
 
   const priorityRow = el('div', { class: 'field-row' }, [
@@ -375,7 +429,7 @@ function renderCard(post) {
 
   return el('div', { class: 'card' }, [
     header,
-    link,
+    links,
     textEl,
     classificationBlock,
     actionsRow,
@@ -408,17 +462,48 @@ function textareaField(post, key, isTopLevel = false) {
   }, [value]);
 }
 
-function render() {
-  const filtered = posts.filter((p) => p.status === activeTab);
-  listEl.innerHTML = '';
-  if (!filtered.length) {
-    listEl.appendChild(el('div', { class: 'empty-state' }, [activeTab === 'pending' ? 'No pending posts. Click "Scan saved posts" to pull from LinkedIn.' : 'Nothing processed yet.']));
+// One post at a time, in scrape order, with Prev/Next — matches "default to
+// the first unprocessed saved post" and resumes where you left off.
+function renderPendingQueue() {
+  const queue = pendingQueue();
+  if (!queue.length) {
+    listEl.appendChild(el('div', { class: 'empty-state' }, ['No pending posts. Click "Scan saved posts" to pull from LinkedIn.']));
     return;
   }
-  filtered.forEach((post) => listEl.appendChild(renderCard(post)));
+  const index = resolveCurrentIndex(queue, lastPendingIndex);
+  lastPendingIndex = index;
+  const current = queue[index];
+  if (queueState.currentId !== current.id) {
+    queueState = { currentId: current.id };
+    setQueueState(queueState);
+  }
+
+  const nav = el('div', { class: 'card-footer' }, [
+    el('button', { class: 'small', ...(index === 0 ? { disabled: 'disabled' } : {}), onclick: async () => { await goToIndex(queue, index - 1); render(); } }, ['← Previous']),
+    el('span', { class: 'status-pill' }, [`Post ${index + 1} of ${queue.length}`]),
+    el('button', { class: 'small', ...(index === queue.length - 1 ? { disabled: 'disabled' } : {}), onclick: async () => { await goToIndex(queue, index + 1); render(); } }, ['Next →']),
+  ]);
+
+  listEl.appendChild(nav);
+  listEl.appendChild(renderCard(current));
+}
+
+function render() {
+  listEl.innerHTML = '';
+  if (activeTab === 'pending') {
+    renderPendingQueue();
+    return;
+  }
+  const processed = posts.filter((p) => p.status === 'processed');
+  if (!processed.length) {
+    listEl.appendChild(el('div', { class: 'empty-state' }, ['Nothing processed yet.']));
+    return;
+  }
+  processed.forEach((post) => listEl.appendChild(renderCard(post)));
 }
 
 (async function init() {
   settings = await getSettings();
+  queueState = await getQueueState();
   await refresh();
 })();

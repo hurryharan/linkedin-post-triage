@@ -22,16 +22,23 @@ with something that costs roughly an order of magnitude less per post
    which opens it for you).
 2. **Scan saved posts** — reads post data straight from the DOM and adds any
    new posts to local storage as *pending*.
-3. **Classify all pending** (or **Classify** on an individual card) — one
+3. **Classify all pending** (or **Classify** on the current card) — one
    Claude API call per post, forced into a structured tool-call response
-   (topic, summary, why-saved, project, type).
-4. Review each card: edit any field, tick the actions that apply, set a
-   priority, and generate/edit a comment draft if `comment` is selected.
+   (topic, summary, why-saved, project, type). Project/type default to a
+   fixed list (Niti, Hetu, iSPIRT, Samyog, DEPA, Investing, Personal,
+   Learning, GTM / Insight, Person, Company, News, Content inspiration,
+   Research, Other) — edit the project list in Settings.
+4. The **Pending** tab shows one post at a time — "Post 3 of 12" with
+   Previous/Next — instead of a long scrolling list, and remembers your
+   place if you close and reopen the side panel. Review the card: edit any
+   field, tick the actions that apply, set a priority, and generate/edit a
+   comment draft if `comment` is selected.
    - **Like** has a **Like it now** button — the content script clicks it on
      LinkedIn directly.
-   - **Comment** has **Insert into LinkedIn**, which fills the comment box
-     with the draft but does **not** submit it — you review and click Post
-     yourself. Nothing public goes out unattended.
+   - **Comment** has **Confirm & post** — it fills the comment box, shows you
+     the exact text in a confirmation dialog, and only then clicks Post,
+     verifying afterward that it went through. Nothing is ever posted
+     without that explicit confirmation.
    - CRM / research / post-idea / repost stay manual: do them on LinkedIn,
      then tick "done" here.
 5. Once every ticked action is marked done, the extension verifies the post
@@ -43,8 +50,11 @@ with something that costs roughly an order of magnitude less per post
 ## Architecture
 
 - `src/content/content.js` — runs on the saved-posts list and individual
-  post pages. Scrapes post data from the DOM and performs the three actions
-  that don't need a model: Like, Unsave, and filling a comment box.
+  post pages. Scrapes post data (including author/company URLs, post
+  timestamp, and engagement metrics where LinkedIn exposes them) and
+  performs the actions that don't need a model: Like, Unsave, filling a
+  comment box, and — only after the side panel's own confirm step —
+  submitting it.
 - `src/background.js` — just wires the toolbar icon to open the side panel.
 - `src/sidepanel/` — the review UI. Talks to `chrome.storage.local`
   directly and relays DOM actions to whichever open LinkedIn tab can handle
@@ -76,6 +86,12 @@ with something that costs roughly an order of magnitude less per post
   session the same way Claude-in-Chrome did in the prototype — that's the
   case either way, not something this extension adds. Be deliberate about
   volume and pacing (don't rip through the whole backlog in one burst).
+- **The extension can publish a comment itself** (via **Confirm & post**),
+  gated only by an in-panel confirmation dialog, not a click on LinkedIn's
+  own Post button. If that verification step (checking the editor emptied
+  out) is ever fooled by a DOM change, a comment could appear posted when
+  it wasn't, or vice versa — spot-check occasionally rather than trusting
+  the "posted ✓" pill blindly at first.
 - **API key lives in `chrome.storage.local` via the options page**, in
   plaintext, readable by anything with access to your Chrome profile. Fine
   for personal, single-machine use only — never package this for anyone

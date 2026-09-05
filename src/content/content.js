@@ -9,6 +9,7 @@
 const SELECTORS = {
   postContainer: '.feed-shared-update-v2, div.occludable-update, div[data-urn]',
   actorName: '.update-components-actor__name',
+  actorLink: '.update-components-actor__meta-link, .update-components-actor__container a[href]',
   actorHeadline: '.update-components-actor__description',
   actorSubDescription: '.update-components-actor__sub-description',
   postText: '.update-components-text',
@@ -16,6 +17,8 @@ const SELECTORS = {
   articleTitle: '.update-components-article__title',
   articleLink: 'a.update-components-article__link, a.update-components-article__meta',
   imageAttachment: '.update-components-image img',
+  timestamp: 'time, .update-components-actor__sub-description span[aria-hidden="true"]',
+  socialCounts: '.social-details-social-counts, [class*="social-details-social-counts"]',
   likeButton: 'button[aria-label^="Like"], button[aria-label^="Unlike"]',
   commentButton: 'button[aria-label^="Comment"]',
   commentEditor: 'div.ql-editor[contenteditable="true"]',
@@ -55,7 +58,7 @@ function guessCompany(headline) {
   return match ? match[1].trim() : null;
 }
 
-function scrapeAttachment(container) {
+function scrapeMediaInfo(container) {
   const articleTitle = container.querySelector(SELECTORS.articleTitle);
   if (articleTitle) {
     const link = container.querySelector(SELECTORS.articleLink);
@@ -66,9 +69,23 @@ function scrapeAttachment(container) {
   return null;
 }
 
+// LinkedIn exposes the absolute post time as a title/datetime attribute on an
+// otherwise relatively-worded element; falls back to null if neither is present.
+function scrapePostDateTime(container) {
+  const el = container.querySelector(SELECTORS.timestamp);
+  if (!el) return null;
+  return el.getAttribute('datetime') || el.getAttribute('title') || null;
+}
+
+function scrapeEngagementMetrics(container) {
+  const el = container.querySelector(SELECTORS.socialCounts);
+  return el ? text(el) : null;
+}
+
 function scrapePostFromContainer(container) {
   const urn = findUrn(container);
   const authorEl = container.querySelector(SELECTORS.actorName);
+  const linkEl = container.querySelector(SELECTORS.actorLink);
   const headlineEl = container.querySelector(SELECTORS.actorHeadline);
   const subDescEl = container.querySelector(SELECTORS.actorSubDescription);
   const textEl = container.querySelector(SELECTORS.postText);
@@ -80,6 +97,8 @@ function scrapePostFromContainer(container) {
 
   const author = text(authorEl);
   const authorHeadline = text(headlineEl);
+  const profileUrl = linkEl ? linkEl.href.split('?')[0] : null;
+  const isCompanyPage = profileUrl && profileUrl.includes('/company/');
 
   return {
     ok: true,
@@ -87,12 +106,16 @@ function scrapePostFromContainer(container) {
       urn,
       url: permalink ? permalink.href.split('?')[0] : (urn ? `https://www.linkedin.com/feed/update/${urn}/` : null),
       author: author || null,
+      authorProfileUrl: isCompanyPage ? null : profileUrl,
       authorHeadline: authorHeadline || null,
       company: guessCompany(authorHeadline),
+      companyUrl: isCompanyPage ? profileUrl : null,
       postedRelative: text(subDescEl) || null,
+      postDateTime: scrapePostDateTime(container),
+      engagementMetrics: scrapeEngagementMetrics(container),
       savedConfirmed: location.pathname.includes('/my-items/saved-posts'),
       postText: text(textEl),
-      attachment: scrapeAttachment(container),
+      mediaInfo: scrapeMediaInfo(container),
     },
   };
 }
@@ -190,9 +213,26 @@ async function insertCommentDraft(urn, commentText) {
   editor.focus();
   document.execCommand('insertText', false, commentText);
   editor.dispatchEvent(new InputEvent('input', { bubbles: true }));
-  // Intentionally does not submit: a human clicks Post so nothing public
-  // goes out without a final review, per the PRD's default posture.
+  // Fills the box only; submitting is a separate, explicit step (submitComment)
+  // so nothing public goes out without the side panel's own confirm step.
   return { ok: true };
+}
+
+// Only ever called after the side panel has shown its own explicit
+// "post this comment now?" confirmation — see sidepanel.js postCommentNow().
+async function submitComment(urn) {
+  const container = findContainerByUrn(urn);
+  if (!container) return { ok: false, error: 'post not found on this page' };
+  const editor = container.querySelector(SELECTORS.commentEditor);
+  if (!editor || !text(editor)) return { ok: false, error: 'no comment text found in the editor to submit' };
+  const submitBtn = container.querySelector(SELECTORS.commentSubmitButton);
+  if (!submitBtn) return { ok: false, error: 'comment submit button not found (selector may be stale)' };
+  submitBtn.click();
+  const confirmed = await waitFor(() => {
+    const e = container.querySelector(SELECTORS.commentEditor);
+    return !e || text(e) === '';
+  }, { timeout: 5000 });
+  return confirmed ? { ok: true } : { ok: false, error: 'clicked post but could not confirm the comment went through' };
 }
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
@@ -212,6 +252,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         break;
       case 'LPT_INSERT_COMMENT':
         sendResponse(await insertCommentDraft(message.urn, message.text));
+        break;
+      case 'LPT_SUBMIT_COMMENT':
+        sendResponse(await submitComment(message.urn));
         break;
       default:
         sendResponse({ ok: false, error: `unknown message type: ${message.type}` });

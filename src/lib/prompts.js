@@ -1,14 +1,16 @@
-export const POST_TYPES = [
-  'news',
-  'insight',
-  'job_hiring',
-  'product',
-  'opinion',
-  'case_study',
-  'event',
-  'personal',
-  'other',
-];
+export const POST_TYPES = ['insight', 'person', 'company', 'news', 'content_inspiration', 'research', 'other'];
+
+export const TYPE_LABELS = {
+  insight: 'Insight',
+  person: 'Person',
+  company: 'Company',
+  news: 'News',
+  content_inspiration: 'Content inspiration',
+  research: 'Research',
+  other: 'Other',
+};
+
+export const DEFAULT_PROJECTS = ['Niti', 'Hetu', 'iSPIRT', 'Samyog', 'DEPA', 'Investing', 'Personal', 'Learning', 'GTM'];
 
 export function classifySystemPrompt(projects) {
   const projectList = projects && projects.length ? projects.join(', ') : '(none configured)';
