@@ -189,14 +189,11 @@ async function scrapeSavedPosts() {
       errors.push(String(err));
     }
   }
-  if (!containers.length) {
-    // Nothing matched even after waiting — likely a genuine selector
-    // mismatch rather than a timing issue. Log enough of the page to
-    // diagnose which of SELECTORS.postContainer's variants broke.
-    const anyUrn = document.querySelectorAll('[data-urn]').length;
-    log('scrapeSavedPosts', `no containers found; readyState=${document.readyState}, any [data-urn] elements=${anyUrn}, url=${location.href}`);
-  }
-  log('scrapeSavedPosts', `found ${containers.length} container(s), ${results.length} parsed, ${errors.length} failed`);
+  // One log call, not two — back-to-back appendLog() calls each read the
+  // stored list before either writes it back, so the second silently
+  // clobbers the first (lost update). Fold the diagnostic into the same line.
+  const diag = containers.length ? '' : `; any [data-urn] elements=${document.querySelectorAll('[data-urn]').length}, readyState=${document.readyState}, url=${location.href}`;
+  log('scrapeSavedPosts', `found ${containers.length} container(s), ${results.length} parsed, ${errors.length} failed${diag}`);
   return { ok: true, posts: results, errors, containerCount: containers.length };
 }
 
