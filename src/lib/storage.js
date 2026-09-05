@@ -31,7 +31,9 @@ export function newRecord(scraped) {
     postText: scraped.postText || '',
     mediaInfo: scraped.mediaInfo || null,
     domError: scraped.domError || null,
-    classification: null, // { topic, summary, whySaved, project, projectCustom, type }
+    // Starts blank rather than null so the review form is always editable —
+    // AI classification is optional, not a gate on manual triage.
+    classification: { topic: '', summary: '', whySaved: '', project: '', projectCustom: '', type: '' },
     actions: emptyActionMap(),
     priority: 3,
     commentDraft: '',

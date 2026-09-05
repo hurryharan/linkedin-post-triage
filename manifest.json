@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "LinkedIn Post Triage",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Classify, review, and act on saved LinkedIn posts without leaving the browser.",
   "permissions": ["storage", "unlimitedStorage", "tabs", "sidePanel", "downloads"],
   "host_permissions": ["*://*.linkedin.com/*", "https://api.anthropic.com/*", "https://api.openai.com/*"],

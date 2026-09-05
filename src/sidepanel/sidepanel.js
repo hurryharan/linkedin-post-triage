@@ -1,5 +1,5 @@
 import { getAllPosts, upsertPost, mergeScraped, getSettings, getActiveCredentials, getQueueState, setQueueState, ACTION_KEYS } from '../lib/storage.js';
-import { classifyPost, draftComment } from '../lib/ai-client.js';
+import { classifyPost, draftComment, PROVIDER_LABELS } from '../lib/ai-client.js';
 import { POST_TYPES, TYPE_LABELS } from '../lib/prompts.js';
 import { downloadWorkbook } from '../lib/xlsx-export.js';
 
@@ -108,10 +108,10 @@ document.getElementById('classifyAllBtn').addEventListener('click', async () => 
   settings = await getSettings();
   const creds = getActiveCredentials(settings);
   if (!creds.apiKey) {
-    setBanner(`Set an API key for ${creds.provider} in Settings first.`);
+    setBanner(`Set an API key for ${PROVIDER_LABELS[creds.provider]} in Settings first, or just fill this in by hand.`);
     return;
   }
-  const targets = posts.filter((p) => p.status === 'pending' && !p.classification);
+  const targets = posts.filter((p) => p.status === 'pending' && !p.classifiedAt);
   setBanner(`Classifying ${targets.length} post(s)…`);
   let failed = 0;
   for (const post of targets) {
@@ -183,7 +183,7 @@ async function maybeAutoUnsave(post) {
 async function reclassify(post) {
   settings = settings || (await getSettings());
   const creds = getActiveCredentials(settings);
-  if (!creds.apiKey) return setBanner(`Set an API key for ${creds.provider} in Settings first.`);
+  if (!creds.apiKey) return setBanner(`Set an API key for ${PROVIDER_LABELS[creds.provider]} in Settings first, or just fill this in by hand.`);
   post.classification = await classifyPost({
     ...creds,
     author: post.author,
@@ -199,7 +199,7 @@ async function reclassify(post) {
 async function suggestComment(post) {
   settings = settings || (await getSettings());
   const creds = getActiveCredentials(settings);
-  if (!creds.apiKey) return setBanner(`Set an API key for ${creds.provider} in Settings first.`);
+  if (!creds.apiKey) return setBanner(`Set an API key for ${PROVIDER_LABELS[creds.provider]} in Settings first, or just fill this in by hand.`);
   post.commentDraft = await draftComment({
     ...creds,
     postText: post.postText,
@@ -252,7 +252,7 @@ function el(tag, props = {}, children = []) {
 
 function projectOptions(post) {
   const known = settings?.projects || [];
-  const options = [...known, 'Other'];
+  const options = ['', ...known, 'Other'];
   const current = post.classification?.project || '';
   return el(
     'select',
@@ -264,7 +264,7 @@ function projectOptions(post) {
         render();
       },
     },
-    options.map((opt) => el('option', { value: opt, ...(opt === current ? { selected: 'selected' } : {}) }, [opt]))
+    options.map((opt) => el('option', { value: opt, ...(opt === current ? { selected: 'selected' } : {}) }, [opt || '(none)']))
   );
 }
 
@@ -279,7 +279,7 @@ function typeOptions(post) {
         await upsertPost(post);
       },
     },
-    POST_TYPES.map((t) => el('option', { value: t, ...(t === current ? { selected: 'selected' } : {}) }, [TYPE_LABELS[t] || t]))
+    ['', ...POST_TYPES].map((t) => el('option', { value: t, ...(t === current ? { selected: 'selected' } : {}) }, [t ? (TYPE_LABELS[t] || t) : '(none)']))
   );
 }
 
@@ -306,26 +306,27 @@ function renderCard(post) {
     post.mediaInfo ? ` · ${post.mediaInfo}` : '',
   ]);
 
-  const classificationBlock = post.classification
-    ? el('div', {}, [
-        el('label', { class: 'field-label' }, ['Topic']),
-        inputField(post, 'topic'),
-        el('label', { class: 'field-label' }, ['Summary']),
-        textareaField(post, 'summary'),
-        el('label', { class: 'field-label' }, ['Why saved']),
-        textareaField(post, 'whySaved'),
-        el('div', { class: 'field-row' }, [
-          el('div', {}, [el('label', { class: 'field-label' }, ['Project']), projectOptions(post)]),
-          el('div', {}, [el('label', { class: 'field-label' }, ['Type']), typeOptions(post)]),
-        ]),
-        c.project === 'Other'
-          ? el('div', {}, [el('label', { class: 'field-label' }, ['Custom project label']), inputField(post, 'projectCustom')])
-          : null,
-      ].filter(Boolean))
-    : el('div', { class: 'card-footer' }, [
-        el('span', { class: 'status-pill' }, ['not classified']),
-        el('button', { class: 'small primary', onclick: () => reclassify(post) }, ['Classify']),
-      ]);
+  // Classification fields are always editable — an API key is optional.
+  // The AI button just pre-fills them; typing your own is equally valid.
+  const classificationBlock = el('div', {}, [
+    el('div', { class: 'card-footer' }, [
+      el('span', { class: 'status-pill' }, [post.classifiedAt ? 'AI-classified' : 'not classified']),
+      el('button', { class: 'small', onclick: () => reclassify(post) }, [post.classifiedAt ? 'Re-classify with AI' : 'Classify with AI']),
+    ]),
+    el('label', { class: 'field-label' }, ['Topic']),
+    inputField(post, 'topic'),
+    el('label', { class: 'field-label' }, ['Summary']),
+    textareaField(post, 'summary'),
+    el('label', { class: 'field-label' }, ['Why saved']),
+    textareaField(post, 'whySaved'),
+    el('div', { class: 'field-row' }, [
+      el('div', {}, [el('label', { class: 'field-label' }, ['Project']), projectOptions(post)]),
+      el('div', {}, [el('label', { class: 'field-label' }, ['Type']), typeOptions(post)]),
+    ]),
+    c.project === 'Other'
+      ? el('div', {}, [el('label', { class: 'field-label' }, ['Custom project label']), inputField(post, 'projectCustom')])
+      : null,
+  ].filter(Boolean));
 
   const actionsRow = el(
     'div',

@@ -12,12 +12,13 @@ with something that costs roughly an order of magnitude less per post
 
 1. `chrome://extensions` → enable **Developer mode** → **Load unpacked** →
    select this repo's root folder.
-2. Click the extension's icon once to pin it, then open its **Details →
-   Extension options** (or right-click the icon → Options), pick a
-   **provider** (Anthropic or OpenAI), and enter that provider's API key.
+2. (Optional) Click the extension's icon once to pin it, then open its
+   **Details → Extension options** (or right-click the icon → Options), pick
+   a **provider** (Anthropic or OpenAI), and enter that provider's API key.
    Click **Test connection** to confirm it works. Both providers' keys are
    kept in storage regardless of which is active, so switching later doesn't
-   lose either one.
+   lose either one. **No key at all is a fully supported mode** — see
+   "Using it without an API key" below.
 3. Click the toolbar icon to open the side panel.
 
 ## Using it
@@ -51,6 +52,16 @@ with something that costs roughly an order of magnitude less per post
    **Processed**.
 6. **Export .xlsx** any time — regenerates a two-tab (Pending / Processed)
    workbook from whatever's in local storage.
+
+## Using it without an API key
+
+Scan, manual triage, actions, and export all work with no key configured —
+nothing here requires AI. The "not classified" pill and the "Classify with
+AI" / "Suggest comment" buttons are just an optional shortcut; the topic,
+summary, why-saved, project, and type fields are always plain editable
+fields, so you can type your own read on a post instead of generating one.
+Clicking an AI button with no key set just shows a banner telling you so —
+it never blocks or breaks the rest of the flow.
 
 ## Architecture
 
