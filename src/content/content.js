@@ -41,24 +41,30 @@ function logError(source, ...args) {
   appendLog('error', `content:${source}`, args.map(String).join(' '));
 }
 
+// The saved-posts list (/my-items/saved-posts/) renders cards with LinkedIn's
+// search "entity-result" layout, not the feed-update layout individual post
+// pages (/feed/update/*) use — hence two variants side by side below. The
+// entity-result card's own wrapper classes are per-build hashes with no
+// stable hook, so postContainer targets the stable BEM child
+// (.entity-result__content-container) directly rather than its <li> parent.
 const SELECTORS = {
-  postContainer: '.feed-shared-update-v2, div.occludable-update, div[data-urn]',
-  actorName: '.update-components-actor__name',
-  actorLink: '.update-components-actor__meta-link, .update-components-actor__container a[href]',
-  actorHeadline: '.update-components-actor__description',
-  actorSubDescription: '.update-components-actor__sub-description',
-  postText: '.update-components-text',
-  seeMoreButton: 'button.feed-shared-inline-show-more-text__see-more-less-toggle',
+  postContainer: '.feed-shared-update-v2, div.occludable-update, div[data-urn], .entity-result__content-container',
+  actorName: '.update-components-actor__name, .entity-result__content-actor a span[dir="ltr"] span',
+  actorLink: '.update-components-actor__meta-link, .update-components-actor__container a[href], .entity-result__content-actor a[href]',
+  actorHeadline: '.update-components-actor__description, .entity-result__content-actor .linked-area > div',
+  actorSubDescription: '.update-components-actor__sub-description, .entity-result__content-actor .linked-area > p',
+  postText: '.update-components-text, .entity-result__content-summary',
+  seeMoreButton: 'button.feed-shared-inline-show-more-text__see-more-less-toggle, button.reusable-search-show-more-link',
   articleTitle: '.update-components-article__title',
   articleLink: 'a.update-components-article__link, a.update-components-article__meta',
-  imageAttachment: '.update-components-image img',
+  imageAttachment: '.update-components-image img, .entity-result__embedded-object-image',
   timestamp: 'time, .update-components-actor__sub-description span[aria-hidden="true"]',
   socialCounts: '.social-details-social-counts, [class*="social-details-social-counts"]',
   likeButton: 'button[aria-label^="Like"], button[aria-label^="Unlike"]',
   commentButton: 'button[aria-label^="Comment"]',
   commentEditor: 'div.ql-editor[contenteditable="true"]',
   commentSubmitButton: 'button.comments-comment-box__submit-button--cr, button[class*="comments-comment-box__submit-button"]',
-  moreActionsButton: 'button[aria-label^="More actions"], button[aria-label*="Open control menu"]',
+  moreActionsButton: 'button[aria-label^="More actions"], button[aria-label*="Open control menu"], button[aria-label*="more actions" i]',
   dropdownItem: 'div.artdeco-dropdown__content-inner li, div.artdeco-dropdown__content-inner div[role="button"]',
 };
 
@@ -85,6 +91,17 @@ function findUrn(container) {
   if (direct) return direct;
   const nested = container.querySelector('[data-urn]');
   return nested ? nested.getAttribute('data-urn') : null;
+}
+
+// FNV-1a — good enough to fingerprint a post's author+text so re-scanning the
+// same saved-posts card yields the same id.
+function hashString(str) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(36);
 }
 
 function guessCompany(headline) {
@@ -134,11 +151,19 @@ function scrapePostFromContainer(container) {
   const authorHeadline = text(headlineEl);
   const profileUrl = linkEl ? linkEl.href.split('?')[0] : null;
   const isCompanyPage = profileUrl && profileUrl.includes('/company/');
+  const postTextValue = text(textEl);
+
+  // The saved-posts entity-result card has no data-urn and no anchor to the
+  // post's own permalink — storage.js's mergeScraped() keys posts by
+  // urn||url and silently drops anything with neither, so without this the
+  // scan would find every card and still report "added 0 new". Falls back to
+  // a fingerprint of author+text; stable across re-scans of the same post.
+  const effectiveUrn = urn || (author || postTextValue ? `ltp-synth:${hashString(`${author}|${postTextValue}`)}` : null);
 
   return {
     ok: true,
     post: {
-      urn,
+      urn: effectiveUrn,
       url: permalink ? permalink.href.split('?')[0] : (urn ? `https://www.linkedin.com/feed/update/${urn}/` : null),
       author: author || null,
       authorProfileUrl: isCompanyPage ? null : profileUrl,
@@ -149,7 +174,7 @@ function scrapePostFromContainer(container) {
       postDateTime: scrapePostDateTime(container),
       engagementMetrics: scrapeEngagementMetrics(container),
       savedConfirmed: location.pathname.includes('/my-items/saved-posts'),
-      postText: text(textEl),
+      postText: postTextValue,
       mediaInfo: scrapeMediaInfo(container),
     },
   };
