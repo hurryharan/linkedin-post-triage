@@ -1,4 +1,4 @@
-import { getAllPosts, upsertPost, mergeScraped, getSettings, getActiveCredentials, getQueueState, setQueueState, SETTINGS_KEY } from '../lib/storage.js';
+import { getAllPosts, upsertPost, mergeScraped, clearAllPosts, getSettings, getActiveCredentials, getQueueState, setQueueState, SETTINGS_KEY } from '../lib/storage.js';
 import { classifyPost, draftComment, PROVIDER_LABELS } from '../lib/ai-client.js';
 import { POST_TYPES, TYPE_LABELS, ACTION_KEYS, ACTION_LABELS } from '../lib/prompts.js';
 import { buildOfflinePrompt, parseOfflineResponse } from '../lib/offline-prompt.js';
@@ -187,7 +187,30 @@ classifyAllBtn.addEventListener('click', async () => {
 });
 
 exportBtn.addEventListener('click', async () => {
-  downloadWorkbook(await getAllPosts());
+  const allPosts = await getAllPosts();
+  busy = true;
+  updateToolbarButtons();
+  let downloadId;
+  try {
+    downloadId = await downloadWorkbook(allPosts);
+  } finally {
+    busy = false;
+    render();
+  }
+  // Only offer this once the save-as dialog actually resolved to a real
+  // download — not before the export, and not if it was cancelled.
+  if (downloadId == null) return;
+  if (!confirm(`Exported ${allPosts.length} post(s). Clear all saved posts now so the next scan starts clean?`)) return;
+  busy = true;
+  updateToolbarButtons();
+  try {
+    await clearAllPosts();
+    setBanner(`Cleared ${allPosts.length} post(s). Click "Scan saved posts" to rescan.`);
+    await refresh();
+  } finally {
+    busy = false;
+    render();
+  }
 });
 
 document.getElementById('settingsBtn').addEventListener('click', () => chrome.runtime.openOptionsPage());

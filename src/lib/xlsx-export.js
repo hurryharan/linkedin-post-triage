@@ -108,10 +108,19 @@ export function buildWorkbook(allRecords) {
   return wb;
 }
 
+// Resolves with the downloadId once the save-as dialog is resolved, or null
+// if the user cancelled it or it otherwise failed — callers that want to
+// offer a follow-up action (e.g. clearing state) only after a real export
+// need to be able to tell the difference.
 export function downloadWorkbook(allRecords, filename = `linkedin-post-triage-${new Date().toISOString().slice(0, 10)}.xlsx`) {
   const wb = buildWorkbook(allRecords);
   const wbBinary = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
   const blob = new Blob([wbBinary], { type: 'application/octet-stream' });
   const url = URL.createObjectURL(blob);
-  chrome.downloads.download({ url, filename, saveAs: true }, () => URL.revokeObjectURL(url));
+  return new Promise((resolve) => {
+    chrome.downloads.download({ url, filename, saveAs: true }, (downloadId) => {
+      URL.revokeObjectURL(url);
+      resolve(chrome.runtime.lastError ? null : downloadId);
+    });
+  });
 }
