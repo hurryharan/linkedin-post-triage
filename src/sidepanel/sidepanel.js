@@ -15,12 +15,31 @@ const TAG_LABELS = Object.fromEntries(ACTION_KEYS.filter((k) => k !== 'comment')
 
 const listEl = document.getElementById('list');
 const bannerEl = document.getElementById('banner');
+const scanBtn = document.getElementById('scanBtn');
 const classifyAllBtn = document.getElementById('classifyAllBtn');
+const exportBtn = document.getElementById('exportBtn');
+const resetBtn = document.getElementById('resetBtn');
 let activeTab = 'pending';
 let posts = [];
 let settings = null;
 let queueState = { currentId: null };
 let lastPendingIndex = 0;
+// True while a network/storage operation the whole panel should wait on is
+// in flight (scan, classify, reset) — disables every action button so a
+// second click can't fire a duplicate request or race the first one.
+let busy = false;
+
+// Toolbar buttons only, not the review card (that's rebuilt by render()
+// itself, which reads `busy` directly) — called after every render() and
+// right before/after any operation that sets `busy`.
+function updateToolbarButtons() {
+  const hasPosts = posts.length > 0;
+  const hasClassifyTargets = posts.some((p) => p.status === 'pending' && !p.classifiedAt);
+  scanBtn.disabled = busy;
+  resetBtn.disabled = busy || !hasPosts;
+  exportBtn.disabled = busy || !hasPosts;
+  classifyAllBtn.disabled = busy || !hasClassifyTargets;
+}
 
 function setBanner(msg) {
   if (!msg) {
@@ -111,34 +130,41 @@ async function ensureSavedPostsTab() {
 
 // --- Toolbar actions ---------------------------------------------------------
 
-document.getElementById('scanBtn').addEventListener('click', async () => {
-  setBanner('Scanning saved posts…');
-  const tab = await ensureSavedPostsTab();
-  await waitForTabComplete(tab.id);
-  // LinkedIn is a client-rendered SPA — "complete" fires before the saved
-  // posts list has actually painted, so give it a beat before scraping.
-  await new Promise((r) => setTimeout(r, 1200));
-  await ensureContentScript(tab.id);
-  let res;
+scanBtn.addEventListener('click', async () => {
+  busy = true;
+  updateToolbarButtons();
   try {
-    res = await chrome.tabs.sendMessage(tab.id, { type: 'LPT_SCRAPE_SAVED_POSTS' });
-  } catch (err) {
-    logger.error('scan', String(err));
-    setBanner(`Scan failed: ${err.message} (see Debug logs in Settings)`);
-    return;
+    setBanner('Scanning saved posts…');
+    const tab = await ensureSavedPostsTab();
+    await waitForTabComplete(tab.id);
+    // LinkedIn is a client-rendered SPA — "complete" fires before the saved
+    // posts list has actually painted, so give it a beat before scraping.
+    await new Promise((r) => setTimeout(r, 1200));
+    await ensureContentScript(tab.id);
+    let res;
+    try {
+      res = await chrome.tabs.sendMessage(tab.id, { type: 'LPT_SCRAPE_SAVED_POSTS' });
+    } catch (err) {
+      logger.error('scan', String(err));
+      setBanner(`Scan failed: ${err.message} (see Debug logs in Settings)`);
+      return;
+    }
+    if (!res?.ok) {
+      logger.error('scan', res?.error || 'no response from the saved-posts tab');
+      setBanner(`Scan failed: ${res?.error || 'no response from the saved-posts tab'} (see Debug logs in Settings)`);
+      return;
+    }
+    const added = await mergeScraped(res.posts);
+    const errCount = res.errors?.length || 0;
+    setBanner(
+      `Scanned ${res.containerCount} post(s), added ${added} new.` +
+        (errCount ? ` ${errCount} could not be parsed — LinkedIn's DOM may have changed; see README.` : '')
+    );
+    await refresh();
+  } finally {
+    busy = false;
+    render();
   }
-  if (!res?.ok) {
-    logger.error('scan', res?.error || 'no response from the saved-posts tab');
-    setBanner(`Scan failed: ${res?.error || 'no response from the saved-posts tab'} (see Debug logs in Settings)`);
-    return;
-  }
-  const added = await mergeScraped(res.posts);
-  const errCount = res.errors?.length || 0;
-  setBanner(
-    `Scanned ${res.containerCount} post(s), added ${added} new.` +
-      (errCount ? ` ${errCount} could not be parsed — LinkedIn's DOM may have changed; see README.` : '')
-  );
-  await refresh();
 });
 
 // Bulk mode's only classify affordance — classifies every pending,
@@ -147,34 +173,42 @@ document.getElementById('scanBtn').addEventListener('click', async () => {
 // instead; this button is hidden outside bulk mode.
 classifyAllBtn.addEventListener('click', async () => {
   const targets = posts.filter((p) => p.status === 'pending' && !p.classifiedAt);
-  if (!targets.length) {
-    setBanner('No pending, unclassified posts to classify.');
-    return;
-  }
+  if (!targets.length) return; // button is disabled in this state, but guard anyway
   if (isOfflineMode()) {
     openOfflinePanel(targets);
     return;
   }
-  await classifyViaApi(targets, (done, total) => setBanner(`Classifying ${done}/${total}…`));
+  busy = true;
+  updateToolbarButtons();
+  try {
+    await classifyViaApi(targets, (done, total) => setBanner(`Classifying ${done}/${total}…`));
+  } finally {
+    busy = false;
+    render();
+  }
 });
 
-document.getElementById('exportBtn').addEventListener('click', async () => {
+exportBtn.addEventListener('click', async () => {
   downloadWorkbook(await getAllPosts());
 });
 
 // Deletes every scraped/triaged post (pending and processed) so a rescan
 // starts from nothing — e.g. after a bad scrape, a synthetic-id collision,
 // or just wanting to drop everything and start over. Settings are untouched.
-document.getElementById('resetBtn').addEventListener('click', async () => {
+resetBtn.addEventListener('click', async () => {
   const count = posts.length;
-  if (!count) {
-    setBanner('Nothing to reset — there are no saved posts yet.');
-    return;
-  }
+  if (!count) return; // button is disabled in this state, but guard anyway
   if (!confirm(`Delete all ${count} saved post(s) (pending and processed)? This can't be undone — export first if you want a copy.`)) return;
-  await clearAllPosts();
-  setBanner(`Cleared ${count} post(s). Click "Scan saved posts" to rescan.`);
-  await refresh();
+  busy = true;
+  updateToolbarButtons();
+  try {
+    await clearAllPosts();
+    setBanner(`Cleared ${count} post(s). Click "Scan saved posts" to rescan.`);
+    await refresh();
+  } finally {
+    busy = false;
+    render();
+  }
 });
 
 document.getElementById('settingsBtn').addEventListener('click', () => chrome.runtime.openOptionsPage());
@@ -234,6 +268,7 @@ async function classifyViaApi(targets, onProgress) {
 const offlinePanelEl = document.getElementById('offlinePanel');
 const offlinePromptEl = document.getElementById('offlinePromptEl');
 const offlinePasteEl = document.getElementById('offlinePasteEl');
+const offlineApplyBtn = document.getElementById('offlineApplyBtn');
 let offlineTargetIds = [];
 
 function openOfflinePanel(targets) {
@@ -241,9 +276,14 @@ function openOfflinePanel(targets) {
   offlineTargetIds = targets.map((p) => p.id);
   offlinePromptEl.value = buildOfflinePrompt(targets, settings.projects || []);
   offlinePasteEl.value = '';
+  offlineApplyBtn.disabled = true; // nothing pasted yet
   offlinePanelEl.hidden = false;
   setBanner(`Prompt built for ${targets.length} post(s). Copy it into Claude or ChatGPT, then paste the reply back below.`);
 }
+
+offlinePasteEl.addEventListener('input', () => {
+  offlineApplyBtn.disabled = !offlinePasteEl.value.trim();
+});
 
 document.getElementById('offlineCopyBtn').addEventListener('click', async () => {
   try {
@@ -258,38 +298,43 @@ document.getElementById('offlineCloseBtn').addEventListener('click', () => {
   offlinePanelEl.hidden = true;
 });
 
-document.getElementById('offlineApplyBtn').addEventListener('click', async () => {
+offlineApplyBtn.addEventListener('click', async () => {
   const { ok, classifications, errors } = parseOfflineResponse(offlinePasteEl.value);
   if (!ok) {
     setBanner(`Could not apply: ${errors[0] || 'no classifications found'}`);
     return;
   }
-  const targetIds = new Set(offlineTargetIds);
-  const byId = new Map(posts.map((p) => [p.id, p]));
-  let applied = 0;
-  for (const c of classifications) {
-    if (!targetIds.has(c.id)) {
-      errors.push(`id "${c.id}" wasn't one of the posts this prompt was built for — skipped.`);
-      continue;
+  offlineApplyBtn.disabled = true;
+  try {
+    const targetIds = new Set(offlineTargetIds);
+    const byId = new Map(posts.map((p) => [p.id, p]));
+    let applied = 0;
+    for (const c of classifications) {
+      if (!targetIds.has(c.id)) {
+        errors.push(`id "${c.id}" wasn't one of the posts this prompt was built for — skipped.`);
+        continue;
+      }
+      const post = byId.get(c.id);
+      if (!post) {
+        errors.push(`No post with id "${c.id}" — skipped.`);
+        continue;
+      }
+      post.classification = { topic: c.topic, summary: c.summary, whySaved: c.whySaved, project: c.project, projectCustom: c.projectCustom, type: c.type };
+      applyRecommendedActions(post, c.recommendedActions);
+      post.classifiedAt = new Date().toISOString();
+      await upsertPost(post);
+      applied++;
     }
-    const post = byId.get(c.id);
-    if (!post) {
-      errors.push(`No post with id "${c.id}" — skipped.`);
-      continue;
+    setBanner(`Applied ${applied} classification(s).` + (errors.length ? ` ${errors.length} issue(s) — see Debug logs in Settings.` : ''));
+    errors.forEach((e) => logger.warn('offlineApply', e));
+    if (applied) {
+      offlinePanelEl.hidden = true;
+      offlinePasteEl.value = '';
     }
-    post.classification = { topic: c.topic, summary: c.summary, whySaved: c.whySaved, project: c.project, projectCustom: c.projectCustom, type: c.type };
-    applyRecommendedActions(post, c.recommendedActions);
-    post.classifiedAt = new Date().toISOString();
-    await upsertPost(post);
-    applied++;
+    await refresh();
+  } finally {
+    offlineApplyBtn.disabled = !offlinePasteEl.value.trim();
   }
-  setBanner(`Applied ${applied} classification(s).` + (errors.length ? ` ${errors.length} issue(s) — see Debug logs in Settings.` : ''));
-  errors.forEach((e) => logger.warn('offlineApply', e));
-  if (applied) {
-    offlinePanelEl.hidden = true;
-    offlinePasteEl.value = '';
-  }
-  await refresh();
 });
 
 // --- Per-post actions (single-post review flow) -----------------------------
@@ -299,13 +344,22 @@ async function classifyCurrent(post) {
     openOfflinePanel([post]);
     return;
   }
-  await classifyViaApi([post], () => setBanner('Classifying…'));
+  busy = true;
+  render();
+  try {
+    await classifyViaApi([post], () => setBanner('Classifying…'));
+  } finally {
+    busy = false;
+    render();
+  }
 }
 
 async function suggestComment(post) {
   settings = settings || (await getSettings());
   const creds = getActiveCredentials(settings);
   if (!creds.apiKey) return setBanner(`Set an API key for ${PROVIDER_LABELS[creds.provider]} in Settings first, or just write the comment yourself.`);
+  busy = true;
+  render();
   try {
     post.commentDraft = await draftComment({
       ...creds,
@@ -313,10 +367,12 @@ async function suggestComment(post) {
       classification: post.classification,
     });
     await upsertPost(post);
-    render();
   } catch (err) {
     logger.error('suggestComment', post.id, err);
     setBanner(`Suggest comment failed: ${err.message} (see Debug logs in Settings)`);
+  } finally {
+    busy = false;
+    render();
   }
 }
 
@@ -334,14 +390,20 @@ async function copyComment(post) {
 }
 
 async function markDoneAndAdvance(queue, index) {
-  const post = queue[index];
-  post.status = 'processed';
-  post.processedAt = new Date().toISOString();
-  await upsertPost(post);
-  posts = await getAllPosts();
-  const nextQueue = pendingQueue();
-  await goToIndex(nextQueue, Math.min(index, nextQueue.length - 1));
+  busy = true;
   render();
+  try {
+    const post = queue[index];
+    post.status = 'processed';
+    post.processedAt = new Date().toISOString();
+    await upsertPost(post);
+    posts = await getAllPosts();
+    const nextQueue = pendingQueue();
+    await goToIndex(nextQueue, Math.min(index, nextQueue.length - 1));
+  } finally {
+    busy = false;
+    render();
+  }
 }
 
 async function skipToNext(queue, index) {
@@ -458,9 +520,10 @@ function renderReviewCard(post, rerender) {
       ])
     : null;
 
+  const canClassify = isOfflineMode() || !!getActiveCredentials(settings || {}).apiKey;
   const classifyRow = el('div', { class: 'section-row' }, [
     el('span', { class: 'status-pill' }, [post.classifiedAt ? 'Classified' : 'Not classified']),
-    el('button', { class: 'small', onclick: () => classifyCurrent(post) }, [post.classifiedAt ? 'Re-classify' : 'Classify']),
+    el('button', { class: 'small', ...(busy || !canClassify ? { disabled: 'disabled' } : {}), onclick: () => classifyCurrent(post) }, [post.classifiedAt ? 'Re-classify' : 'Classify']),
   ]);
 
   const labeled = (label, control) => el('div', { class: 'labeled-field' }, [el('label', { class: 'field-label' }, [label]), control]);
@@ -511,13 +574,15 @@ function renderReviewCard(post, rerender) {
     ]
   );
 
+  const hasLiveKey = !isOfflineMode() && !!getActiveCredentials(settings || {}).apiKey;
+  const hasDraft = !!(post.commentDraft && post.commentDraft.trim());
   const commentBlock = post.actions.comment
     ? el('div', { class: 'comment-block' }, [
         textareaField(post, 'commentDraft', true),
         el('div', { class: 'section-row' }, [
           el('div', { class: 'btns' }, [
-            el('button', { class: 'small', onclick: () => suggestComment(post) }, ['Suggest with AI']),
-            el('button', { class: 'small', onclick: () => copyComment(post) }, ['Copy']),
+            el('button', { class: 'small', ...(busy || !hasLiveKey ? { disabled: 'disabled' } : {}), title: hasLiveKey ? '' : 'Set a live API key in Settings to use this — drafting has no offline equivalent', onclick: () => suggestComment(post) }, ['Suggest with AI']),
+            el('button', { class: 'small', ...(busy || !hasDraft ? { disabled: 'disabled' } : {}), onclick: () => copyComment(post) }, ['Copy']),
           ]),
           el('label', { class: 'tag-chip' }, [
             el('input', {
@@ -559,20 +624,24 @@ function renderReviewFlow(queue) {
   }
 
   const rerender = () => render();
+  const isLast = index >= queue.length - 1;
 
+  // Top: pure position/navigation (where am I, go back). Bottom: the two
+  // forward-progressing actions grouped together, primary CTA on the right —
+  // reading the card top to bottom ends at the button that moves you on.
   const nav = el('div', { class: 'review-nav' }, [
-    el('button', { class: 'small', ...(index === 0 ? { disabled: 'disabled' } : {}), onclick: async () => { await goToIndex(queue, index - 1); render(); } }, ['← Prev']),
+    el('button', { class: 'small', ...(busy || index === 0 ? { disabled: 'disabled' } : {}), onclick: async () => { await goToIndex(queue, index - 1); render(); } }, ['← Prev']),
     el('span', { class: 'status-pill' }, [`${index + 1} of ${queue.length}`]),
-    index < queue.length - 1
-      ? el('button', { class: 'link-btn', onclick: () => skipToNext(queue, index) }, ['Skip for now →'])
-      : el('span', {}, []),
   ]);
 
-  const doneBtn = el('button', { class: 'primary', onclick: () => markDoneAndAdvance(queue, index) }, ['Mark done → Next']);
+  const footer = el('div', { class: 'review-footer' }, [
+    el('button', { class: 'link-btn', ...(busy || isLast ? { disabled: 'disabled' } : {}), onclick: () => skipToNext(queue, index) }, ['Skip for now →']),
+    el('button', { class: 'primary', ...(busy ? { disabled: 'disabled' } : {}), onclick: () => markDoneAndAdvance(queue, index) }, ['Mark done → Next']),
+  ]);
 
   listEl.appendChild(nav);
   listEl.appendChild(renderReviewCard(current, rerender));
-  listEl.appendChild(el('div', { class: 'review-footer' }, [doneBtn]));
+  listEl.appendChild(footer);
 }
 
 function statusSummary(post) {
@@ -604,6 +673,7 @@ function renderTable(list) {
 function render() {
   listEl.innerHTML = '';
   classifyAllBtn.hidden = !isBulkMode();
+  updateToolbarButtons();
 
   if (activeTab === 'pending') {
     const queue = pendingQueue();

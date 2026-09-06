@@ -33,8 +33,20 @@ function highlightClassifyMode() {
   testBtn.hidden = offline;
 }
 
-providerEl.addEventListener('change', highlightActiveProvider);
+// Testing is meaningless without a key for whichever provider is selected —
+// disable rather than let it fail with an error every time.
+function updateTestButtonState() {
+  const activeKeyEl = providerEl.value === 'openai' ? openaiApiKeyEl : anthropicApiKeyEl;
+  testBtn.disabled = !activeKeyEl.value.trim();
+}
+
+providerEl.addEventListener('change', () => {
+  highlightActiveProvider();
+  updateTestButtonState();
+});
 classifyModeEl.addEventListener('change', highlightClassifyMode);
+anthropicApiKeyEl.addEventListener('input', updateTestButtonState);
+openaiApiKeyEl.addEventListener('input', updateTestButtonState);
 
 async function load() {
   const settings = await getSettings();
@@ -48,6 +60,7 @@ async function load() {
   projectsEl.value = (settings.projects || []).join(', ');
   highlightActiveProvider();
   highlightClassifyMode();
+  updateTestButtonState();
 }
 
 function readForm() {
@@ -72,16 +85,21 @@ testBtn.addEventListener('click', async () => {
   const settings = readForm();
   const { provider, apiKey, model } = getActiveCredentials(settings);
   if (!apiKey) return setStatus(`Enter a ${provider === 'openai' ? 'OpenAI' : 'Anthropic'} API key first.`, false);
+  testBtn.disabled = true;
   setStatus('Testing…', true);
   try {
     await testApiKey({ provider, apiKey, model });
     setStatus('Connection OK.', true);
   } catch (err) {
     setStatus(`Failed: ${err.message}`, false);
+  } finally {
+    updateTestButtonState();
   }
 });
 
 const logsContentEl = document.getElementById('logsContent');
+const logsClearBtn = document.getElementById('logsClearBtn');
+const logsCopyBtn = document.getElementById('logsCopyBtn');
 
 async function renderLogs() {
   const entries = await getLogEntries();
@@ -89,16 +107,18 @@ async function renderLogs() {
     ? entries.map((e) => `[${e.ts}] ${e.level.toUpperCase().padEnd(5)} ${e.source}: ${e.message}`).join('\n')
     : '(no log entries yet)';
   logsContentEl.scrollTop = logsContentEl.scrollHeight;
+  logsClearBtn.disabled = !entries.length;
+  logsCopyBtn.disabled = !entries.length;
 }
 
 document.getElementById('logsRefreshBtn').addEventListener('click', renderLogs);
 
-document.getElementById('logsClearBtn').addEventListener('click', async () => {
+logsClearBtn.addEventListener('click', async () => {
   await clearLogEntries();
   await renderLogs();
 });
 
-document.getElementById('logsCopyBtn').addEventListener('click', async () => {
+logsCopyBtn.addEventListener('click', async () => {
   try {
     await navigator.clipboard.writeText(logsContentEl.textContent);
     setStatus('Log copied to clipboard.', true);
