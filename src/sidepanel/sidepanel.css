@@ -69,6 +69,29 @@ header {
   white-space: pre-wrap;
   word-break: break-word;
 }
+.offline-panel {
+  background: #fff;
+  border-bottom: 1px solid #ddd;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.offline-step { display: flex; flex-direction: column; gap: 4px; }
+.offline-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: #555;
+}
+.offline-toolbar .btns { display: flex; gap: 6px; }
+.offline-textarea {
+  font: 11px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  min-height: 100px;
+  resize: vertical;
+}
 .list { padding: 8px; display: flex; flex-direction: column; gap: 10px; }
 .card {
   background: #fff;

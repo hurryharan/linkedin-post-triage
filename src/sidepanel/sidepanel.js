@@ -1,6 +1,7 @@
 import { getAllPosts, upsertPost, mergeScraped, getSettings, getActiveCredentials, getQueueState, setQueueState, ACTION_KEYS } from '../lib/storage.js';
 import { classifyPost, draftComment, PROVIDER_LABELS } from '../lib/ai-client.js';
 import { POST_TYPES, TYPE_LABELS } from '../lib/prompts.js';
+import { buildOfflinePrompt, parseOfflineResponse } from '../lib/offline-prompt.js';
 import { downloadWorkbook } from '../lib/xlsx-export.js';
 import { makeLogger, getLogEntries, clearLogEntries } from '../lib/logger.js';
 
@@ -176,6 +177,66 @@ document.getElementById('classifyAllBtn').addEventListener('click', async () => 
     }
   }
   setBanner(failed ? `Done, ${failed} failed — check the API key/model in Settings.` : 'Classification complete.');
+  await refresh();
+});
+
+// --- Offline AI: no API key needed, classify via a pasted chat-UI reply ----
+
+const offlinePanelEl = document.getElementById('offlinePanel');
+const offlinePromptEl = document.getElementById('offlinePromptEl');
+const offlinePasteEl = document.getElementById('offlinePasteEl');
+
+document.getElementById('offlineAiBtn').addEventListener('click', async () => {
+  settings = settings || (await getSettings());
+  const targets = posts.filter((p) => p.status === 'pending' && !p.classifiedAt);
+  if (!targets.length) {
+    setBanner('No pending, unclassified posts to build a prompt for.');
+    return;
+  }
+  offlinePromptEl.value = buildOfflinePrompt(targets, settings.projects);
+  offlinePasteEl.value = '';
+  offlinePanelEl.hidden = false;
+  setBanner(`Prompt built for ${targets.length} post(s). Copy it into Claude or ChatGPT.`);
+});
+
+document.getElementById('offlineCopyBtn').addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(offlinePromptEl.value);
+    setBanner('Prompt copied to clipboard.');
+  } catch (err) {
+    setBanner(`Copy failed: ${err.message}`);
+  }
+});
+
+document.getElementById('offlineCloseBtn').addEventListener('click', () => {
+  offlinePanelEl.hidden = true;
+});
+
+document.getElementById('offlineApplyBtn').addEventListener('click', async () => {
+  const { ok, classifications, errors } = parseOfflineResponse(offlinePasteEl.value);
+  if (!ok) {
+    setBanner(`Could not apply: ${errors[0] || 'no classifications found'}`);
+    return;
+  }
+  let applied = 0;
+  const byId = new Map(posts.map((p) => [p.id, p]));
+  for (const c of classifications) {
+    const post = byId.get(c.id);
+    if (!post) {
+      errors.push(`No pending post with id "${c.id}" — skipped.`);
+      continue;
+    }
+    post.classification = { topic: c.topic, summary: c.summary, whySaved: c.whySaved, project: c.project, projectCustom: c.projectCustom, type: c.type };
+    post.classifiedAt = new Date().toISOString();
+    await upsertPost(post);
+    applied++;
+  }
+  setBanner(`Applied ${applied} classification(s).` + (errors.length ? ` ${errors.length} issue(s) — see Logs.` : ''));
+  errors.forEach((e) => logger.warn('offlineApply', e));
+  if (applied) {
+    offlinePanelEl.hidden = true;
+    offlinePasteEl.value = '';
+  }
   await refresh();
 });
 

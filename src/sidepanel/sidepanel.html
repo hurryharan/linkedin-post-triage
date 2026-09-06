@@ -14,6 +14,7 @@
     <div class="toolbar">
       <button id="scanBtn">Scan saved posts</button>
       <button id="classifyAllBtn">Classify all pending</button>
+      <button id="offlineAiBtn" title="Classify via a pasted Claude/ChatGPT response, no API key needed">Offline AI</button>
       <button id="exportBtn">Export .xlsx</button>
       <button id="logsBtn" title="Debug logs">Logs</button>
       <button id="settingsBtn" title="Settings">⚙</button>
@@ -32,6 +33,28 @@
       </div>
     </div>
     <pre id="logsContent" class="logs-content"></pre>
+  </div>
+
+  <div id="offlinePanel" class="offline-panel" hidden>
+    <div class="offline-step">
+      <div class="offline-toolbar">
+        <span>1. Copy this prompt into Claude or ChatGPT.</span>
+        <div class="btns">
+          <button id="offlineCopyBtn" class="small">Copy</button>
+          <button id="offlineCloseBtn" class="small">Close</button>
+        </div>
+      </div>
+      <textarea id="offlinePromptEl" class="offline-textarea" readonly></textarea>
+    </div>
+    <div class="offline-step">
+      <div class="offline-toolbar">
+        <span>2. Paste its reply here, then apply.</span>
+        <div class="btns">
+          <button id="offlineApplyBtn" class="small primary">Apply</button>
+        </div>
+      </div>
+      <textarea id="offlinePasteEl" class="offline-textarea" placeholder="Paste the JSON response here…"></textarea>
+    </div>
   </div>
 
   <div id="list" class="list"></div>
