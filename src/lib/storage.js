@@ -3,9 +3,10 @@ import { PROVIDERS } from './ai-client.js';
 
 // Single-blob storage: chrome.storage.local key -> { [id]: PostRecord }.
 // Fine at personal-backlog scale (low thousands of posts); revisit if it ever grows past that.
-const STORE_KEY = 'ltp_posts_v1';
-const SETTINGS_KEY = 'ltp_settings_v1';
-const QUEUE_KEY = 'ltp_queue_state_v1';
+// Exported so callers can watch chrome.storage.onChanged without duplicating these strings.
+export const STORE_KEY = 'ltp_posts_v1';
+export const SETTINGS_KEY = 'ltp_settings_v1';
+export const QUEUE_KEY = 'ltp_queue_state_v1';
 
 export const ACTION_KEYS = ['like', 'comment', 'crm', 'research', 'post_idea', 'repost'];
 
@@ -100,6 +101,14 @@ export async function removePost(id) {
   const map = await readAll();
   delete map[id];
   await writeAll(map);
+}
+
+// Wipes every scraped/triaged post so the next scan starts clean — e.g. after
+// a synthetic id collision, a bad scrape, or just wanting a fresh start.
+// Settings and debug logs are untouched.
+export async function clearAllPosts() {
+  await writeAll({});
+  await setQueueState({ currentId: null });
 }
 
 function defaultSettings() {

@@ -1,4 +1,4 @@
-import { getAllPosts, upsertPost, mergeScraped, getSettings, getActiveCredentials, getQueueState, setQueueState } from '../lib/storage.js';
+import { getAllPosts, upsertPost, mergeScraped, clearAllPosts, getSettings, getActiveCredentials, getQueueState, setQueueState, SETTINGS_KEY } from '../lib/storage.js';
 import { classifyPost, draftComment, PROVIDER_LABELS } from '../lib/ai-client.js';
 import { POST_TYPES, TYPE_LABELS } from '../lib/prompts.js';
 import { buildOfflinePrompt, parseOfflineResponse } from '../lib/offline-prompt.js';
@@ -180,6 +180,21 @@ classifyAllBtn.addEventListener('click', async () => {
 
 document.getElementById('exportBtn').addEventListener('click', async () => {
   downloadWorkbook(await getAllPosts());
+});
+
+// Deletes every scraped/triaged post (pending and processed) so a rescan
+// starts from nothing — e.g. after a bad scrape, a synthetic-id collision,
+// or just wanting to drop everything and start over. Settings are untouched.
+document.getElementById('resetBtn').addEventListener('click', async () => {
+  const count = posts.length;
+  if (!count) {
+    setBanner('Nothing to reset — there are no saved posts yet.');
+    return;
+  }
+  if (!confirm(`Delete all ${count} saved post(s) (pending and processed)? This can't be undone — export first if you want a copy.`)) return;
+  await clearAllPosts();
+  setBanner(`Cleared ${count} post(s). Click "Scan saved posts" to rescan.`);
+  await refresh();
 });
 
 document.getElementById('settingsBtn').addEventListener('click', () => chrome.runtime.openOptionsPage());
@@ -619,6 +634,15 @@ function render() {
   }
   listEl.appendChild(renderTable(processed));
 }
+
+// Settings are edited on a separate options page while this panel stays
+// open, so a one-time load at init would go stale the moment you flip
+// Classification input or Review flow mode there — pick up live changes.
+chrome.storage.onChanged.addListener(async (changes, area) => {
+  if (area !== 'local' || !(SETTINGS_KEY in changes)) return;
+  settings = await getSettings();
+  render();
+});
 
 (async function init() {
   settings = await getSettings();
