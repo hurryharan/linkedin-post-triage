@@ -532,9 +532,14 @@ function renderReviewCard(post, rerender) {
     if (post.classifiedAt && !confirm('Re-classify will overwrite the current topic, summary, why-saved, project, and type with a fresh AI read. Continue?')) return;
     classifyCurrent(post);
   };
+  // Blue/primary for the natural first action on a fresh post; once
+  // classified, re-classifying is an occasional correction, not the thing
+  // you're steered toward, so it reverts to a plain button.
+  const classifyBtnClass = post.classifiedAt ? 'small' : 'primary';
+  const classifyDisabledReason = !canClassify ? 'Set an API key in Settings to use this, or switch Classification input to Offline mode' : '';
   const classifyRow = el('div', { class: 'section-row' }, [
     el('span', { class: 'status-pill' }, [post.classifiedAt ? 'Classified' : 'Not classified']),
-    el('button', { class: 'small', ...(busy || !canClassify ? { disabled: 'disabled' } : {}), onclick: onClassifyClick }, [post.classifiedAt ? 'Re-classify' : 'Classify']),
+    el('button', { class: classifyBtnClass, ...(busy || !canClassify ? { disabled: 'disabled' } : {}), title: classifyDisabledReason, onclick: onClassifyClick }, [post.classifiedAt ? 'Re-classify' : 'Classify']),
   ]);
 
   const labeled = (label, control) => el('div', { class: 'labeled-field' }, [el('label', { class: 'field-label' }, [label]), control]);
