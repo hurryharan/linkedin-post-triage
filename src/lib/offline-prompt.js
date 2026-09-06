@@ -1,7 +1,7 @@
 // "Offline AI" mode: build a copy-pasteable prompt for a chat UI (Claude,
 // ChatGPT) when the user has no API key configured, then parse the response
 // pasted back in. No network calls live here — this only builds/parses text.
-import { classifySystemPrompt, POST_TYPES, ACTION_KEYS } from './prompts.js';
+import { classifySystemPrompt, COMMENT_SYSTEM_PROMPT, POST_TYPES, ACTION_KEYS } from './prompts.js';
 
 export function buildOfflinePrompt(posts, projects) {
   const items = posts.map((p) => ({
@@ -25,7 +25,7 @@ export function buildOfflinePrompt(posts, projects) {
     JSON.stringify(items, null, 2),
     '',
     '=== OUTPUT ===',
-    `Return a JSON array with ${countPhrase === 'exactly 1 post' ? 'exactly 1 object' : `exactly ${items.length} objects`} — one per input post, in the same order, each shaped EXACTLY like this (all seven keys required):`,
+    `Return a JSON array with ${countPhrase === 'exactly 1 post' ? 'exactly 1 object' : `exactly ${items.length} objects`} — one per input post, in the same order, each shaped EXACTLY like this (all eight keys required):`,
     '{',
     '  "id": "<copy the matching input post\'s id, character-for-character>",',
     '  "topic": "<a few words>",',
@@ -34,8 +34,12 @@ export function buildOfflinePrompt(posts, projects) {
     `  "project": "<one of the known projects/areas listed above, or \\"Other\\" if none fit>",`,
     '  "projectCustom": "<a short free-text label, ONLY if project is \\"Other\\"; otherwise an empty string \\"\\">",',
     `  "type": "<exactly one of: ${POST_TYPES.join(' | ')}>",`,
-    `  "recommendedActions": ["<zero or more of: ${ACTION_KEYS.join(' | ')}, as an array — [] if none fit>"]`,
+    `  "recommendedActions": ["<zero or more of: ${ACTION_KEYS.join(' | ')}, as an array — [] if none fit>"],`,
+    '  "commentDraft": "<see below>"',
     '}',
+    '',
+    '=== commentDraft ===',
+    `If, and only if, recommendedActions for a post includes "comment", write the actual comment text for commentDraft, following these rules: ${COMMENT_SYSTEM_PROMPT} For every other post, commentDraft must be an empty string "".`,
     '',
     'Rules: output ONLY the JSON array (no ```json fence, no markdown, no text before or after it). Every input id must appear exactly once in your output, unchanged. recommendedActions must always be an array, even when empty.',
   ].join('\n');
@@ -89,6 +93,7 @@ export function parseOfflineResponse(raw) {
       projectCustom: entry.projectCustom || '',
       type: POST_TYPES.includes(entry.type) ? entry.type : '',
       recommendedActions,
+      commentDraft: typeof entry.commentDraft === 'string' ? entry.commentDraft : '',
     });
   });
 

@@ -321,6 +321,8 @@ offlineApplyBtn.addEventListener('click', async () => {
       }
       post.classification = { topic: c.topic, summary: c.summary, whySaved: c.whySaved, project: c.project, projectCustom: c.projectCustom, type: c.type };
       applyRecommendedActions(post, c.recommendedActions);
+      // Don't clobber a draft you already wrote or generated yourself.
+      if (c.commentDraft && !post.commentDraft) post.commentDraft = c.commentDraft;
       post.classifiedAt = new Date().toISOString();
       await upsertPost(post);
       applied++;
@@ -574,14 +576,17 @@ function renderReviewCard(post, rerender) {
     ]
   );
 
-  const hasLiveKey = !isOfflineMode() && !!getActiveCredentials(settings || {}).apiKey;
+  // Suggest with AI always calls the live provider API directly, regardless
+  // of Settings' Classification input mode — offline mode instead gets its
+  // draft for free from the classification prompt's own commentDraft field.
+  const hasLiveKey = !!getActiveCredentials(settings || {}).apiKey;
   const hasDraft = !!(post.commentDraft && post.commentDraft.trim());
   const commentBlock = post.actions.comment
     ? el('div', { class: 'comment-block' }, [
         textareaField(post, 'commentDraft', true),
         el('div', { class: 'section-row' }, [
           el('div', { class: 'btns' }, [
-            el('button', { class: 'small', ...(busy || !hasLiveKey ? { disabled: 'disabled' } : {}), title: hasLiveKey ? '' : 'Set a live API key in Settings to use this — drafting has no offline equivalent', onclick: () => suggestComment(post) }, ['Suggest with AI']),
+            el('button', { class: 'small', ...(busy || !hasLiveKey ? { disabled: 'disabled' } : {}), title: hasLiveKey ? '' : 'Set an API key in Settings to use this, or get a draft for free by classifying in Offline mode', onclick: () => suggestComment(post) }, ['Suggest with AI']),
             el('button', { class: 'small', ...(busy || !hasDraft ? { disabled: 'disabled' } : {}), onclick: () => copyComment(post) }, ['Copy']),
           ]),
           el('label', { class: 'tag-chip' }, [
