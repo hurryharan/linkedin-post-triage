@@ -1,4 +1,4 @@
-import { getAllPosts, upsertPost, mergeScraped, clearAllPosts, getSettings, getActiveCredentials, getQueueState, setQueueState, SETTINGS_KEY } from '../lib/storage.js';
+import { getAllPosts, upsertPost, mergeScraped, getSettings, getActiveCredentials, getQueueState, setQueueState, SETTINGS_KEY } from '../lib/storage.js';
 import { classifyPost, draftComment, PROVIDER_LABELS } from '../lib/ai-client.js';
 import { POST_TYPES, TYPE_LABELS, ACTION_KEYS, ACTION_LABELS } from '../lib/prompts.js';
 import { buildOfflinePrompt, parseOfflineResponse } from '../lib/offline-prompt.js';
@@ -18,15 +18,14 @@ const bannerEl = document.getElementById('banner');
 const scanBtn = document.getElementById('scanBtn');
 const classifyAllBtn = document.getElementById('classifyAllBtn');
 const exportBtn = document.getElementById('exportBtn');
-const resetBtn = document.getElementById('resetBtn');
 let activeTab = 'pending';
 let posts = [];
 let settings = null;
 let queueState = { currentId: null };
 let lastPendingIndex = 0;
 // True while a network/storage operation the whole panel should wait on is
-// in flight (scan, classify, reset) — disables every action button so a
-// second click can't fire a duplicate request or race the first one.
+// in flight (scan, classify) — disables every action button so a second
+// click can't fire a duplicate request or race the first one.
 let busy = false;
 
 // Toolbar buttons only, not the review card (that's rebuilt by render()
@@ -36,7 +35,6 @@ function updateToolbarButtons() {
   const hasPosts = posts.length > 0;
   const hasClassifyTargets = posts.some((p) => p.status === 'pending' && !p.classifiedAt);
   scanBtn.disabled = busy;
-  resetBtn.disabled = busy || !hasPosts;
   exportBtn.disabled = busy || !hasPosts;
   classifyAllBtn.disabled = busy || !hasClassifyTargets;
 }
@@ -190,25 +188,6 @@ classifyAllBtn.addEventListener('click', async () => {
 
 exportBtn.addEventListener('click', async () => {
   downloadWorkbook(await getAllPosts());
-});
-
-// Deletes every scraped/triaged post (pending and processed) so a rescan
-// starts from nothing — e.g. after a bad scrape, a synthetic-id collision,
-// or just wanting to drop everything and start over. Settings are untouched.
-resetBtn.addEventListener('click', async () => {
-  const count = posts.length;
-  if (!count) return; // button is disabled in this state, but guard anyway
-  if (!confirm(`Delete all ${count} saved post(s) (pending and processed)? This can't be undone — export first if you want a copy.`)) return;
-  busy = true;
-  updateToolbarButtons();
-  try {
-    await clearAllPosts();
-    setBanner(`Cleared ${count} post(s). Click "Scan saved posts" to rescan.`);
-    await refresh();
-  } finally {
-    busy = false;
-    render();
-  }
 });
 
 document.getElementById('settingsBtn').addEventListener('click', () => chrome.runtime.openOptionsPage());
@@ -523,9 +502,16 @@ function renderReviewCard(post, rerender) {
     : null;
 
   const canClassify = isOfflineMode() || !!getActiveCredentials(settings || {}).apiKey;
+  // Re-classifying replaces topic/summary/whySaved/project/type outright —
+  // confirm first so a hand-edit made after the first classify isn't lost
+  // silently. First-time Classify has nothing to lose, so no prompt.
+  const onClassifyClick = () => {
+    if (post.classifiedAt && !confirm('Re-classify will overwrite the current topic, summary, why-saved, project, and type with a fresh AI read. Continue?')) return;
+    classifyCurrent(post);
+  };
   const classifyRow = el('div', { class: 'section-row' }, [
     el('span', { class: 'status-pill' }, [post.classifiedAt ? 'Classified' : 'Not classified']),
-    el('button', { class: 'small', ...(busy || !canClassify ? { disabled: 'disabled' } : {}), onclick: () => classifyCurrent(post) }, [post.classifiedAt ? 'Re-classify' : 'Classify']),
+    el('button', { class: 'small', ...(busy || !canClassify ? { disabled: 'disabled' } : {}), onclick: onClassifyClick }, [post.classifiedAt ? 'Re-classify' : 'Classify']),
   ]);
 
   const labeled = (label, control) => el('div', { class: 'labeled-field' }, [el('label', { class: 'field-label' }, [label]), control]);

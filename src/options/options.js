@@ -1,4 +1,4 @@
-import { getSettings, setSettings, getActiveCredentials } from '../lib/storage.js';
+import { getSettings, setSettings, getActiveCredentials, getAllPosts, clearAllPosts } from '../lib/storage.js';
 import { testApiKey } from '../lib/ai-client.js';
 import { getLogEntries, clearLogEntries } from '../lib/logger.js';
 
@@ -124,6 +124,23 @@ logsCopyBtn.addEventListener('click', async () => {
     setStatus('Log copied to clipboard.', true);
   } catch (err) {
     setStatus(`Copy failed: ${err.message}`, false);
+  }
+});
+
+const resetPostsBtn = document.getElementById('resetPostsBtn');
+
+// Lives here rather than the side panel toolbar specifically so wiping
+// everything isn't one click + one confirm away during normal triage.
+resetPostsBtn.addEventListener('click', async () => {
+  const count = (await getAllPosts()).length;
+  if (!count) return setStatus('Nothing to reset — there are no saved posts yet.', true);
+  if (!confirm(`Delete all ${count} saved post(s) (pending and processed)? This can't be undone — export first if you want a copy.`)) return;
+  resetPostsBtn.disabled = true;
+  try {
+    await clearAllPosts();
+    setStatus(`Cleared ${count} post(s). Scan again from the side panel to start fresh.`, true);
+  } finally {
+    resetPostsBtn.disabled = false;
   }
 });
 
