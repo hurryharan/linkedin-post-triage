@@ -34,18 +34,18 @@ export function newRecord(scraped) {
     // Starts blank rather than null so the review form is always editable —
     // AI classification is optional, not a gate on manual triage.
     classification: { topic: '', summary: '', whySaved: '', project: '', projectCustom: '', type: '' },
+    // Tags for a separate, external workflow to act on in bulk (like, repost,
+    // crm, research, post_idea) — this tool only marks intent, never drives
+    // LinkedIn's UI itself. "comment" is the one exception: drafting happens
+    // here, but posting is still a manual copy-paste (see commentPosted).
     actions: emptyActionMap(),
     priority: 3,
     commentDraft: '',
-    commentPosted: null,
-    manualDone: emptyActionMap(),
-    unsaveStatus: 'pending', // pending | done | failed
-    reviewStatus: 'unreviewed', // unreviewed | reviewed
+    commentPosted: null, // ISO timestamp once you confirm you posted it yourself, else null
     status: 'pending', // pending | processed
     createdAt: now,
     updatedAt: now,
     classifiedAt: null,
-    reviewedAt: null,
     processedAt: null,
   };
 }
@@ -110,6 +110,12 @@ function defaultSettings() {
     openaiApiKey: '',
     openaiModel: PROVIDERS.openai.DEFAULT_MODEL,
     projects: DEFAULT_PROJECTS,
+    // 'single' = review one post at a time (classify, tag, comment, done, next).
+    // 'bulk' = classify everything pending in one shot and export, no per-post flow.
+    workflowMode: 'single',
+    // 'live' = call the configured provider's API. 'offline' = build a prompt
+    // to paste into Claude/ChatGPT's own UI and paste the reply back in.
+    classifyMode: 'live',
   };
 }
 

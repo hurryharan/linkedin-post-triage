@@ -10,17 +10,33 @@ export function buildOfflinePrompt(posts, projects) {
     authorHeadline: p.authorHeadline || '',
     postText: p.postText || '(no text captured)',
   }));
+  const countPhrase = items.length === 1 ? 'exactly 1 post' : `exactly ${items.length} posts`;
 
   return [
+    'You are a JSON-generating classification tool with no other purpose in this exchange.',
+    'Do not reply conversationally, do not explain your reasoning, do not add a preamble or closing remark.',
+    'Your entire reply must be a single valid JSON array and nothing else — it will be parsed programmatically, not read by a person.',
+    '',
+    '=== CONTEXT (how to classify each post) ===',
     classifySystemPrompt(projects),
     '',
-    'Classify each post below. Respond with ONLY a JSON array — no prose, no markdown code fence — one object per post, each shaped exactly as:',
-    `{"id": "<the id from the input, unchanged>", "topic": "...", "summary": "...", "whySaved": "...", "project": "...", "projectCustom": "...", "type": "one of: ${POST_TYPES.join('|')}"}`,
-    '',
-    'projectCustom is only used when project is "Other"; leave it "" otherwise.',
-    '',
-    'Posts to classify:',
+    '=== INPUT ===',
+    `The array below contains ${countPhrase} to classify, each with an "id", "author", "authorHeadline", and "postText".`,
     JSON.stringify(items, null, 2),
+    '',
+    '=== OUTPUT ===',
+    `Return a JSON array with ${countPhrase === 'exactly 1 post' ? 'exactly 1 object' : `exactly ${items.length} objects`} — one per input post, in the same order, each shaped EXACTLY like this (all six keys required, as strings):`,
+    '{',
+    '  "id": "<copy the matching input post\'s id, character-for-character>",',
+    '  "topic": "<a few words>",',
+    '  "summary": "<one sentence>",',
+    '  "whySaved": "<one sentence, your best guess>",',
+    `  "project": "<one of the known projects/areas listed above, or \\"Other\\" if none fit>",`,
+    '  "projectCustom": "<a short free-text label, ONLY if project is \\"Other\\"; otherwise an empty string \\"\\">",',
+    `  "type": "<exactly one of: ${POST_TYPES.join(' | ')}>"`,
+    '}',
+    '',
+    'Rules: output ONLY the JSON array (no ```json fence, no markdown, no text before or after it). Every input id must appear exactly once in your output, unchanged.',
   ].join('\n');
 }
 

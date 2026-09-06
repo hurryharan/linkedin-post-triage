@@ -8,17 +8,12 @@
 <body>
   <header>
     <div class="tabs">
-      <button class="tab-btn active" data-tab="pending">Pending</button>
+      <button class="tab-btn active" data-tab="pending">Review</button>
       <button class="tab-btn" data-tab="processed">Processed</button>
-      <div class="view-toggle">
-        <button class="view-btn active" data-view="cards">Cards</button>
-        <button class="view-btn" data-view="table">Table</button>
-      </div>
     </div>
     <div class="toolbar">
       <button id="scanBtn">Scan saved posts</button>
-      <button id="classifyAllBtn">Classify all pending</button>
-      <button id="offlineAiBtn" title="Classify via a pasted Claude/ChatGPT response, no API key needed">Offline AI</button>
+      <button id="classifyAllBtn" hidden>Classify all pending</button>
       <button id="exportBtn">Export .xlsx</button>
       <button id="settingsBtn" title="Settings">⚙</button>
     </div>

@@ -36,8 +36,21 @@
 <body>
   <h1>LinkedIn Post Triage — Settings</h1>
 
-  <div class="hint">Both API keys are optional. Without one, Scan / manual triage / Export .xlsx work exactly the same — you just fill in the classification fields yourself instead of clicking "Classify with AI".</div>
+  <label for="workflowMode">Review flow</label>
+  <select id="workflowMode">
+    <option value="single">One post at a time (recommended)</option>
+    <option value="bulk">Bulk — classify everything and export, no per-post review</option>
+  </select>
+  <div class="hint">One-at-a-time steps you through each pending post: classify, tag, optionally draft a comment, then moves you to the next. Bulk skips all of that — it just classifies whatever's pending in one shot and leaves you to work from the exported spreadsheet.</div>
 
+  <label for="classifyMode">Classification input</label>
+  <select id="classifyMode">
+    <option value="live">Live API key</option>
+    <option value="offline">Offline — paste into Claude or ChatGPT</option>
+  </select>
+  <div class="hint" id="classifyModeHint">Live calls your chosen provider's API directly using the key below. Offline instead builds a prompt for you to paste into Claude or ChatGPT's own chat, then you paste its reply back in — no API key needed.</div>
+
+  <div id="providerSettings">
   <label for="provider">AI provider</label>
   <select id="provider">
     <option value="anthropic">Anthropic (Claude)</option>
@@ -70,6 +83,7 @@
   </div>
 
   <div class="hint" style="margin-top: 8px;">Keys are stored locally in this browser profile only (chrome.storage.local). Each is sent only to its own provider's API.</div>
+  </div>
 
   <label for="projects">Known projects/areas (comma-separated)</label>
   <input type="text" id="projects" placeholder="Niti, Hetu, iSPIRT, Samyog, DEPA, Investing, Personal, Learning, GTM" />

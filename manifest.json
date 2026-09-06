@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "LinkedIn Post Triage",
   "version": "0.6.0",
-  "description": "Classify, review, and act on saved LinkedIn posts without leaving the browser.",
+  "description": "Classify and review saved LinkedIn posts one at a time, then export for action elsewhere.",
   "permissions": ["storage", "unlimitedStorage", "tabs", "scripting", "sidePanel", "downloads"],
   "host_permissions": ["*://*.linkedin.com/*", "https://api.anthropic.com/*", "https://api.openai.com/*"],
   "background": {
@@ -18,10 +18,7 @@
   "options_page": "src/options/options.html",
   "content_scripts": [
     {
-      "matches": [
-        "*://www.linkedin.com/my-items/saved-posts/*",
-        "*://www.linkedin.com/feed/update/*"
-      ],
+      "matches": ["*://www.linkedin.com/my-items/saved-posts/*"],
       "js": ["src/content/content.js"],
       "css": ["src/content/content.css"],
       "run_at": "document_idle"

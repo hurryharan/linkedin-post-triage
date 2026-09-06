@@ -47,6 +47,10 @@ function logError(source, ...args) {
 // entity-result card's own wrapper classes are per-build hashes with no
 // stable hook, so postContainer targets the stable BEM child
 // (.entity-result__content-container) directly rather than its <li> parent.
+// This tool only ever scrapes — it never drives LinkedIn's own UI (no
+// auto-like, auto-comment, auto-unsave). Like/comment/repost/etc. are tags
+// the side panel writes into storage for a separate, external workflow to
+// act on; a person does the actual clicking on linkedin.com themselves.
 const SELECTORS = {
   postContainer: '.feed-shared-update-v2, div.occludable-update, div[data-urn], .entity-result__content-container',
   actorName: '.update-components-actor__name, .entity-result__content-actor a span[dir="ltr"] span',
@@ -60,12 +64,6 @@ const SELECTORS = {
   imageAttachment: '.update-components-image img, .entity-result__embedded-object-image',
   timestamp: 'time, .update-components-actor__sub-description span[aria-hidden="true"]',
   socialCounts: '.social-details-social-counts, [class*="social-details-social-counts"]',
-  likeButton: 'button[aria-label^="Like"], button[aria-label^="Unlike"]',
-  commentButton: 'button[aria-label^="Comment"]',
-  commentEditor: 'div.ql-editor[contenteditable="true"]',
-  commentSubmitButton: 'button.comments-comment-box__submit-button--cr, button[class*="comments-comment-box__submit-button"]',
-  moreActionsButton: 'button[aria-label^="More actions"], button[aria-label*="Open control menu"], button[aria-label*="more actions" i]',
-  dropdownItem: 'div.artdeco-dropdown__content-inner li, div.artdeco-dropdown__content-inner div[role="button"]',
 };
 
 function sleep(ms) {
@@ -222,119 +220,14 @@ async function scrapeSavedPosts() {
   return { ok: true, posts: results, errors, containerCount: containers.length };
 }
 
-function findContainerByUrn(urn) {
-  if (!urn) return null;
-  const direct = document.querySelector(`div[data-urn="${CSS.escape(urn)}"]`);
-  if (direct) return direct.closest(SELECTORS.postContainer) || direct;
-  const containers = Array.from(document.querySelectorAll(SELECTORS.postContainer));
-  return containers.find((c) => findUrn(c) === urn) || null;
-}
-
-async function doLike(urn) {
-  const container = findContainerByUrn(urn);
-  if (!container) return { ok: false, error: 'post not found on this page' };
-  const btn = container.querySelector(SELECTORS.likeButton);
-  if (!btn) return { ok: false, error: 'like button not found (selector may be stale)' };
-  const alreadyLiked = btn.getAttribute('aria-pressed') === 'true' || /^unlike/i.test(btn.getAttribute('aria-label') || '');
-  if (alreadyLiked) return { ok: true, alreadyDone: true };
-  btn.click();
-  const confirmed = await waitFor(() => {
-    const b = container.querySelector(SELECTORS.likeButton);
-    return b && (b.getAttribute('aria-pressed') === 'true' || /^unlike/i.test(b.getAttribute('aria-label') || ''));
-  });
-  return confirmed ? { ok: true } : { ok: false, error: 'clicked Like but could not confirm state change' };
-}
-
-async function isSaved(urn) {
-  const container = findContainerByUrn(urn);
-  if (!container) return { ok: false, error: 'post not found on this page' };
-  const moreBtn = container.querySelector(SELECTORS.moreActionsButton);
-  if (!moreBtn) return { ok: false, error: 'more-actions button not found (selector may be stale)' };
-  moreBtn.click();
-  const menu = await waitFor(() => document.querySelector(SELECTORS.dropdownItem));
-  if (!menu) return { ok: false, error: 'dropdown menu did not open' };
-  const items = Array.from(document.querySelectorAll(SELECTORS.dropdownItem));
-  const saveItem = items.find((i) => /\bsave(d)?\b/i.test(i.textContent));
-  const saved = saveItem ? /^saved\b/i.test(saveItem.textContent.trim()) : null;
-  moreBtn.click(); // close menu without acting
-  return { ok: saved !== null, saved, error: saved === null ? 'could not locate save/unsave menu item' : undefined };
-}
-
-async function doUnsave(urn) {
-  const container = findContainerByUrn(urn);
-  if (!container) return { ok: false, error: 'post not found on this page' };
-  const moreBtn = container.querySelector(SELECTORS.moreActionsButton);
-  if (!moreBtn) return { ok: false, error: 'more-actions button not found (selector may be stale)' };
-  moreBtn.click();
-  const menu = await waitFor(() => document.querySelector(SELECTORS.dropdownItem));
-  if (!menu) return { ok: false, error: 'dropdown menu did not open' };
-  const items = Array.from(document.querySelectorAll(SELECTORS.dropdownItem));
-  const saveItem = items.find((i) => /\bsave(d)?\b/i.test(i.textContent));
-  if (!saveItem) return { ok: false, error: 'save/unsave menu item not found' };
-  if (!/^saved\b/i.test(saveItem.textContent.trim())) {
-    return { ok: true, alreadyDone: true };
-  }
-  saveItem.click();
-  await sleep(300);
-  return { ok: true };
-}
-
-async function insertCommentDraft(urn, commentText) {
-  const container = findContainerByUrn(urn);
-  if (!container) return { ok: false, error: 'post not found on this page' };
-  const commentBtn = container.querySelector(SELECTORS.commentButton);
-  if (!commentBtn) return { ok: false, error: 'comment button not found (selector may be stale)' };
-  commentBtn.click();
-  const editor = await waitFor(() => container.querySelector(SELECTORS.commentEditor));
-  if (!editor) return { ok: false, error: 'comment editor did not open (selector may be stale)' };
-  editor.focus();
-  document.execCommand('insertText', false, commentText);
-  editor.dispatchEvent(new InputEvent('input', { bubbles: true }));
-  // Fills the box only; submitting is a separate, explicit step (submitComment)
-  // so nothing public goes out without the side panel's own confirm step.
-  return { ok: true };
-}
-
-// Only ever called after the side panel has shown its own explicit
-// "post this comment now?" confirmation — see sidepanel.js postCommentNow().
-async function submitComment(urn) {
-  const container = findContainerByUrn(urn);
-  if (!container) return { ok: false, error: 'post not found on this page' };
-  const editor = container.querySelector(SELECTORS.commentEditor);
-  if (!editor || !text(editor)) return { ok: false, error: 'no comment text found in the editor to submit' };
-  const submitBtn = container.querySelector(SELECTORS.commentSubmitButton);
-  if (!submitBtn) return { ok: false, error: 'comment submit button not found (selector may be stale)' };
-  submitBtn.click();
-  const confirmed = await waitFor(() => {
-    const e = container.querySelector(SELECTORS.commentEditor);
-    return !e || text(e) === '';
-  }, { timeout: 5000 });
-  return confirmed ? { ok: true } : { ok: false, error: 'clicked post but could not confirm the comment went through' };
-}
-
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   (async () => {
-    log('onMessage', 'received', message.type, message.urn || '');
+    log('onMessage', 'received', message.type);
     let result;
     try {
       switch (message.type) {
         case 'LPT_SCRAPE_SAVED_POSTS':
           result = await scrapeSavedPosts();
-          break;
-        case 'LPT_DO_LIKE':
-          result = await doLike(message.urn);
-          break;
-        case 'LPT_IS_SAVED':
-          result = await isSaved(message.urn);
-          break;
-        case 'LPT_DO_UNSAVE':
-          result = await doUnsave(message.urn);
-          break;
-        case 'LPT_INSERT_COMMENT':
-          result = await insertCommentDraft(message.urn, message.text);
-          break;
-        case 'LPT_SUBMIT_COMMENT':
-          result = await submitComment(message.urn);
           break;
         default:
           result = { ok: false, error: `unknown message type: ${message.type}` };

@@ -2,6 +2,9 @@ import { getSettings, setSettings, getActiveCredentials } from '../lib/storage.j
 import { testApiKey } from '../lib/ai-client.js';
 import { getLogEntries, clearLogEntries } from '../lib/logger.js';
 
+const workflowModeEl = document.getElementById('workflowMode');
+const classifyModeEl = document.getElementById('classifyMode');
+const providerSettingsEl = document.getElementById('providerSettings');
 const providerEl = document.getElementById('provider');
 const anthropicBlock = document.getElementById('anthropicBlock');
 const anthropicApiKeyEl = document.getElementById('anthropicApiKey');
@@ -24,10 +27,19 @@ function highlightActiveProvider() {
   openaiBlock.classList.toggle('inactive', providerEl.value !== 'openai');
 }
 
+function highlightClassifyMode() {
+  const offline = classifyModeEl.value === 'offline';
+  providerSettingsEl.hidden = offline;
+  testBtn.hidden = offline;
+}
+
 providerEl.addEventListener('change', highlightActiveProvider);
+classifyModeEl.addEventListener('change', highlightClassifyMode);
 
 async function load() {
   const settings = await getSettings();
+  workflowModeEl.value = settings.workflowMode || 'single';
+  classifyModeEl.value = settings.classifyMode || 'live';
   providerEl.value = settings.provider;
   anthropicApiKeyEl.value = settings.anthropicApiKey || '';
   anthropicModelEl.value = settings.anthropicModel || '';
@@ -35,10 +47,13 @@ async function load() {
   openaiModelEl.value = settings.openaiModel || '';
   projectsEl.value = (settings.projects || []).join(', ');
   highlightActiveProvider();
+  highlightClassifyMode();
 }
 
 function readForm() {
   return {
+    workflowMode: workflowModeEl.value,
+    classifyMode: classifyModeEl.value,
     provider: providerEl.value,
     anthropicApiKey: anthropicApiKeyEl.value.trim(),
     anthropicModel: anthropicModelEl.value.trim(),
