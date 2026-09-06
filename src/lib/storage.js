@@ -1,4 +1,4 @@
-import { DEFAULT_PROJECTS } from './prompts.js';
+import { DEFAULT_PROJECTS, ACTION_KEYS } from './prompts.js';
 import { PROVIDERS } from './ai-client.js';
 
 // Single-blob storage: chrome.storage.local key -> { [id]: PostRecord }.
@@ -7,8 +7,6 @@ import { PROVIDERS } from './ai-client.js';
 export const STORE_KEY = 'ltp_posts_v1';
 export const SETTINGS_KEY = 'ltp_settings_v1';
 export const QUEUE_KEY = 'ltp_queue_state_v1';
-
-export const ACTION_KEYS = ['like', 'comment', 'crm', 'research', 'post_idea', 'repost'];
 
 export function emptyActionMap() {
   return Object.fromEntries(ACTION_KEYS.map((k) => [k, false]));

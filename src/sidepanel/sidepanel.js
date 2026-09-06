@@ -1,6 +1,6 @@
 import { getAllPosts, upsertPost, mergeScraped, clearAllPosts, getSettings, getActiveCredentials, getQueueState, setQueueState, SETTINGS_KEY } from '../lib/storage.js';
 import { classifyPost, draftComment, PROVIDER_LABELS } from '../lib/ai-client.js';
-import { POST_TYPES, TYPE_LABELS } from '../lib/prompts.js';
+import { POST_TYPES, TYPE_LABELS, ACTION_KEYS, ACTION_LABELS } from '../lib/prompts.js';
 import { buildOfflinePrompt, parseOfflineResponse } from '../lib/offline-prompt.js';
 import { downloadWorkbook } from '../lib/xlsx-export.js';
 import { makeLogger } from '../lib/logger.js';
@@ -9,14 +9,9 @@ const logger = makeLogger('sidepanel');
 
 // Tags for a separate, external workflow — this tool never drives LinkedIn's
 // UI for these. Comment is the one exception (see the comment block below):
-// drafting happens here, but posting is still manual, so it isn't in this list.
-const TAG_LABELS = {
-  like: 'Like',
-  repost: 'Repost',
-  crm: 'CRM entry',
-  research: 'Research',
-  post_idea: 'Post idea',
-};
+// drafting happens here, but posting is still manual, so it's rendered
+// separately rather than as one of these chips.
+const TAG_LABELS = Object.fromEntries(ACTION_KEYS.filter((k) => k !== 'comment').map((k) => [k, ACTION_LABELS[k]]));
 
 const listEl = document.getElementById('list');
 const bannerEl = document.getElementById('banner');
@@ -194,6 +189,15 @@ document.querySelectorAll('.tab-btn').forEach((btn) => {
 
 // --- Classification (live API or offline prompt, shared by both flows) -----
 
+// Turns a classification's AI-recommended actions into pre-checked tags —
+// the same tags xlsx-export.js reads to build per-action sheets — without
+// ever un-checking a tag you'd already set yourself.
+function applyRecommendedActions(post, recommendedActions) {
+  for (const key of recommendedActions || []) {
+    if (key in post.actions) post.actions[key] = true;
+  }
+}
+
 async function classifyViaApi(targets, onProgress) {
   settings = settings || (await getSettings());
   const creds = getActiveCredentials(settings);
@@ -205,13 +209,15 @@ async function classifyViaApi(targets, onProgress) {
   let failed = 0;
   for (const post of targets) {
     try {
-      post.classification = await classifyPost({
+      const { recommendedActions, ...classification } = await classifyPost({
         ...creds,
         author: post.author,
         authorHeadline: post.authorHeadline,
         postText: post.postText,
         projects: settings.projects,
       });
+      post.classification = classification;
+      applyRecommendedActions(post, recommendedActions);
       post.classifiedAt = new Date().toISOString();
       await upsertPost(post);
     } catch (err) {
@@ -272,6 +278,7 @@ document.getElementById('offlineApplyBtn').addEventListener('click', async () =>
       continue;
     }
     post.classification = { topic: c.topic, summary: c.summary, whySaved: c.whySaved, project: c.project, projectCustom: c.projectCustom, type: c.type };
+    applyRecommendedActions(post, c.recommendedActions);
     post.classifiedAt = new Date().toISOString();
     await upsertPost(post);
     applied++;

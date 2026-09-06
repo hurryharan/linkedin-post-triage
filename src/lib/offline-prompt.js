@@ -1,7 +1,7 @@
 // "Offline AI" mode: build a copy-pasteable prompt for a chat UI (Claude,
 // ChatGPT) when the user has no API key configured, then parse the response
 // pasted back in. No network calls live here — this only builds/parses text.
-import { classifySystemPrompt, POST_TYPES } from './prompts.js';
+import { classifySystemPrompt, POST_TYPES, ACTION_KEYS } from './prompts.js';
 
 export function buildOfflinePrompt(posts, projects) {
   const items = posts.map((p) => ({
@@ -25,7 +25,7 @@ export function buildOfflinePrompt(posts, projects) {
     JSON.stringify(items, null, 2),
     '',
     '=== OUTPUT ===',
-    `Return a JSON array with ${countPhrase === 'exactly 1 post' ? 'exactly 1 object' : `exactly ${items.length} objects`} — one per input post, in the same order, each shaped EXACTLY like this (all six keys required, as strings):`,
+    `Return a JSON array with ${countPhrase === 'exactly 1 post' ? 'exactly 1 object' : `exactly ${items.length} objects`} — one per input post, in the same order, each shaped EXACTLY like this (all seven keys required):`,
     '{',
     '  "id": "<copy the matching input post\'s id, character-for-character>",',
     '  "topic": "<a few words>",',
@@ -33,10 +33,11 @@ export function buildOfflinePrompt(posts, projects) {
     '  "whySaved": "<one sentence, your best guess>",',
     `  "project": "<one of the known projects/areas listed above, or \\"Other\\" if none fit>",`,
     '  "projectCustom": "<a short free-text label, ONLY if project is \\"Other\\"; otherwise an empty string \\"\\">",',
-    `  "type": "<exactly one of: ${POST_TYPES.join(' | ')}>"`,
+    `  "type": "<exactly one of: ${POST_TYPES.join(' | ')}>",`,
+    `  "recommendedActions": ["<zero or more of: ${ACTION_KEYS.join(' | ')}, as an array — [] if none fit>"]`,
     '}',
     '',
-    'Rules: output ONLY the JSON array (no ```json fence, no markdown, no text before or after it). Every input id must appear exactly once in your output, unchanged.',
+    'Rules: output ONLY the JSON array (no ```json fence, no markdown, no text before or after it). Every input id must appear exactly once in your output, unchanged. recommendedActions must always be an array, even when empty.',
   ].join('\n');
 }
 
@@ -76,6 +77,9 @@ export function parseOfflineResponse(raw) {
       errors.push(`Entry ${i} has no "id" — skipped.`);
       return;
     }
+    const recommendedActions = Array.isArray(entry.recommendedActions)
+      ? entry.recommendedActions.filter((a) => ACTION_KEYS.includes(a))
+      : [];
     classifications.push({
       id: String(entry.id),
       topic: entry.topic || '',
@@ -84,6 +88,7 @@ export function parseOfflineResponse(raw) {
       project: entry.project || '',
       projectCustom: entry.projectCustom || '',
       type: POST_TYPES.includes(entry.type) ? entry.type : '',
+      recommendedActions,
     });
   });
 

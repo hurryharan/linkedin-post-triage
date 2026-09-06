@@ -1,4 +1,4 @@
-import { classifySystemPrompt, COMMENT_SYSTEM_PROMPT, POST_TYPES } from '../prompts.js';
+import { classifySystemPrompt, COMMENT_SYSTEM_PROMPT, POST_TYPES, ACTION_KEYS } from '../prompts.js';
 
 const API_URL = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_VERSION = '2023-06-01';
@@ -38,8 +38,13 @@ const CLASSIFY_TOOL = {
       project: { type: 'string', description: 'Best-matching known project/area, or "Other".' },
       projectCustom: { type: 'string', description: 'Free-text label when project is "Other". Empty string otherwise.' },
       type: { type: 'string', enum: POST_TYPES },
+      recommendedActions: {
+        type: 'array',
+        items: { type: 'string', enum: ACTION_KEYS },
+        description: 'Zero or more recommended follow-up actions. Empty array if none fit.',
+      },
     },
-    required: ['topic', 'summary', 'whySaved', 'project', 'projectCustom', 'type'],
+    required: ['topic', 'summary', 'whySaved', 'project', 'projectCustom', 'type', 'recommendedActions'],
   },
 };
 
