@@ -72,10 +72,6 @@ async function goToIndex(queue, index) {
 
 // --- Linked-in tab plumbing (scan only — see content.js) --------------------
 
-async function getLinkedInTabs() {
-  return chrome.tabs.query({ url: '*://www.linkedin.com/*' });
-}
-
 // Declarative content_scripts only auto-inject into *new* page loads — a tab
 // that was already open before the extension was installed/reloaded never
 // gets it, which is exactly what produces "Could not establish connection.
@@ -110,30 +106,11 @@ async function waitForTabComplete(tabId, timeoutMs = 15000) {
   });
 }
 
-async function sendToLinkedInTabs(message) {
-  const tabs = await getLinkedInTabs();
-  logger.log('sendToLinkedInTabs', message.type, `${tabs.length} candidate tab(s)`);
-  if (!tabs.length) return { ok: false, error: 'no LinkedIn tab is open' };
-  let last = { ok: false, error: 'no matching tab responded' };
-  for (const tab of tabs) {
-    try {
-      await ensureContentScript(tab.id);
-      const res = await chrome.tabs.sendMessage(tab.id, message);
-      logger.log('sendToLinkedInTabs', message.type, 'tab', tab.id, '→', JSON.stringify(res));
-      if (res && res.ok) return res;
-      if (res) last = res;
-    } catch (err) {
-      logger.error('sendToLinkedInTabs', message.type, 'tab', tab.id, 'threw', err);
-      last = { ok: false, error: String(err) };
-    }
-  }
-  return last;
-}
-
+// Finds (or opens) the saved-posts tab specifically — scraping only ever
+// makes sense there, so this never guesses among other open LinkedIn tabs.
 async function ensureSavedPostsTab() {
-  const tabs = await getLinkedInTabs();
-  const onSavedPage = tabs.find((t) => t.url.includes('/my-items/saved-posts'));
-  if (onSavedPage) return onSavedPage;
+  const tabs = await chrome.tabs.query({ url: '*://www.linkedin.com/my-items/saved-posts/*' });
+  if (tabs.length) return tabs[0];
   return chrome.tabs.create({ url: 'https://www.linkedin.com/my-items/saved-posts/' });
 }
 
@@ -146,10 +123,18 @@ document.getElementById('scanBtn').addEventListener('click', async () => {
   // LinkedIn is a client-rendered SPA — "complete" fires before the saved
   // posts list has actually painted, so give it a beat before scraping.
   await new Promise((r) => setTimeout(r, 1200));
-  const res = await sendToLinkedInTabs({ type: 'LPT_SCRAPE_SAVED_POSTS' });
-  if (!res.ok) {
-    logger.error('scan', res.error);
-    setBanner(`Scan failed: ${res.error} (see Debug logs in Settings)`);
+  await ensureContentScript(tab.id);
+  let res;
+  try {
+    res = await chrome.tabs.sendMessage(tab.id, { type: 'LPT_SCRAPE_SAVED_POSTS' });
+  } catch (err) {
+    logger.error('scan', String(err));
+    setBanner(`Scan failed: ${err.message} (see Debug logs in Settings)`);
+    return;
+  }
+  if (!res?.ok) {
+    logger.error('scan', res?.error || 'no response from the saved-posts tab');
+    setBanner(`Scan failed: ${res?.error || 'no response from the saved-posts tab'} (see Debug logs in Settings)`);
     return;
   }
   const added = await mergeScraped(res.posts);
