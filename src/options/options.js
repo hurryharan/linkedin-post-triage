@@ -1,5 +1,6 @@
 import { getSettings, setSettings, getActiveCredentials } from '../lib/storage.js';
 import { testApiKey } from '../lib/ai-client.js';
+import { getLogEntries, clearLogEntries } from '../lib/logger.js';
 
 const providerEl = document.getElementById('provider');
 const anthropicBlock = document.getElementById('anthropicBlock');
@@ -65,4 +66,31 @@ testBtn.addEventListener('click', async () => {
   }
 });
 
+const logsContentEl = document.getElementById('logsContent');
+
+async function renderLogs() {
+  const entries = await getLogEntries();
+  logsContentEl.textContent = entries.length
+    ? entries.map((e) => `[${e.ts}] ${e.level.toUpperCase().padEnd(5)} ${e.source}: ${e.message}`).join('\n')
+    : '(no log entries yet)';
+  logsContentEl.scrollTop = logsContentEl.scrollHeight;
+}
+
+document.getElementById('logsRefreshBtn').addEventListener('click', renderLogs);
+
+document.getElementById('logsClearBtn').addEventListener('click', async () => {
+  await clearLogEntries();
+  await renderLogs();
+});
+
+document.getElementById('logsCopyBtn').addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(logsContentEl.textContent);
+    setStatus('Log copied to clipboard.', true);
+  } catch (err) {
+    setStatus(`Copy failed: ${err.message}`, false);
+  }
+});
+
 load();
+renderLogs();

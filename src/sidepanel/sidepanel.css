@@ -12,7 +12,7 @@ header {
   border-bottom: 1px solid #ddd;
   z-index: 1;
 }
-.tabs { display: flex; padding: 8px 8px 0; }
+.tabs { display: flex; align-items: center; justify-content: space-between; padding: 8px 8px 0; }
 .tab-btn {
   background: none;
   border: none;
@@ -23,6 +23,17 @@ header {
   border-bottom: 2px solid transparent;
 }
 .tab-btn.active { color: #0a66c2; border-bottom-color: #0a66c2; }
+.view-toggle { display: flex; gap: 4px; }
+.view-btn {
+  font-size: 11px;
+  padding: 4px 8px;
+  border: 1px solid #ccc;
+  background: #fff;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #666;
+}
+.view-btn.active { background: #0a66c2; color: #fff; border-color: #0a66c2; }
 .toolbar { display: flex; gap: 6px; padding: 8px; flex-wrap: wrap; }
 .toolbar button {
   font-size: 12px;
@@ -40,35 +51,12 @@ header {
   font-size: 12px;
   border-bottom: 1px solid #ffe69c;
 }
-.logs-panel {
-  background: #1e1e1e;
-  color: #ddd;
-  border-bottom: 1px solid #444;
-  max-height: 260px;
-  display: flex;
-  flex-direction: column;
-}
-.logs-toolbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  font-size: 11px;
-  color: #aaa;
-  border-bottom: 1px solid #333;
-}
-.logs-toolbar .btns { display: flex; gap: 6px; }
-.logs-toolbar button.small { background: #333; color: #ddd; border-color: #555; }
-.logs-toolbar button.small:hover { background: #444; }
-.logs-content {
-  margin: 0;
-  padding: 8px 10px;
-  overflow-y: auto;
-  font: 11px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
+.post-table { width: 100%; border-collapse: collapse; background: #fff; font-size: 12px; }
+.post-table th, .post-table td { padding: 6px 8px; border-bottom: 1px solid #eee; text-align: left; }
+.post-table th { position: sticky; top: 0; background: #fafafa; font-weight: 600; color: #555; }
+.post-table tbody tr { cursor: pointer; }
+.post-table tbody tr:hover { background: #f5f9ff; }
+.post-table td.ellipsis { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .offline-panel {
   background: #fff;
   border-bottom: 1px solid #ddd;

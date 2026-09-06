@@ -3,7 +3,7 @@ import { classifyPost, draftComment, PROVIDER_LABELS } from '../lib/ai-client.js
 import { POST_TYPES, TYPE_LABELS } from '../lib/prompts.js';
 import { buildOfflinePrompt, parseOfflineResponse } from '../lib/offline-prompt.js';
 import { downloadWorkbook } from '../lib/xlsx-export.js';
-import { makeLogger, getLogEntries, clearLogEntries } from '../lib/logger.js';
+import { makeLogger } from '../lib/logger.js';
 
 const logger = makeLogger('sidepanel');
 
@@ -19,6 +19,7 @@ const ACTION_LABELS = {
 const listEl = document.getElementById('list');
 const bannerEl = document.getElementById('banner');
 let activeTab = 'pending';
+let viewMode = 'cards';
 let posts = [];
 let settings = null;
 let queueState = { currentId: null };
@@ -138,7 +139,7 @@ document.getElementById('scanBtn').addEventListener('click', async () => {
   const res = await sendToLinkedInTabs({ type: 'LPT_SCRAPE_SAVED_POSTS' });
   if (!res.ok) {
     logger.error('scan', res.error);
-    setBanner(`Scan failed: ${res.error} (see Logs for details)`);
+    setBanner(`Scan failed: ${res.error} (see Debug logs in Settings)`);
     return;
   }
   const added = await mergeScraped(res.posts);
@@ -231,7 +232,7 @@ document.getElementById('offlineApplyBtn').addEventListener('click', async () =>
     await upsertPost(post);
     applied++;
   }
-  setBanner(`Applied ${applied} classification(s).` + (errors.length ? ` ${errors.length} issue(s) — see Logs.` : ''));
+  setBanner(`Applied ${applied} classification(s).` + (errors.length ? ` ${errors.length} issue(s) — see Debug logs in Settings.` : ''));
   errors.forEach((e) => logger.warn('offlineApply', e));
   if (applied) {
     offlinePanelEl.hidden = true;
@@ -246,44 +247,18 @@ document.getElementById('exportBtn').addEventListener('click', async () => {
 
 document.getElementById('settingsBtn').addEventListener('click', () => chrome.runtime.openOptionsPage());
 
-const logsPanelEl = document.getElementById('logsPanel');
-const logsContentEl = document.getElementById('logsContent');
-
-async function renderLogs() {
-  const entries = await getLogEntries();
-  logsContentEl.textContent = entries.length
-    ? entries.map((e) => `[${e.ts}] ${e.level.toUpperCase().padEnd(5)} ${e.source}: ${e.message}`).join('\n')
-    : '(no log entries yet)';
-  logsContentEl.scrollTop = logsContentEl.scrollHeight;
-}
-
-document.getElementById('logsBtn').addEventListener('click', async () => {
-  logsPanelEl.hidden = !logsPanelEl.hidden;
-  if (!logsPanelEl.hidden) await renderLogs();
-});
-
-document.getElementById('logsCloseBtn').addEventListener('click', () => {
-  logsPanelEl.hidden = true;
-});
-
-document.getElementById('logsClearBtn').addEventListener('click', async () => {
-  await clearLogEntries();
-  await renderLogs();
-});
-
-document.getElementById('logsCopyBtn').addEventListener('click', async () => {
-  try {
-    await navigator.clipboard.writeText(logsContentEl.textContent);
-    setBanner('Log copied to clipboard.');
-  } catch (err) {
-    setBanner(`Copy failed: ${err.message}`);
-  }
-});
-
 document.querySelectorAll('.tab-btn').forEach((btn) => {
   btn.addEventListener('click', () => {
     activeTab = btn.dataset.tab;
     document.querySelectorAll('.tab-btn').forEach((b) => b.classList.toggle('active', b === btn));
+    render();
+  });
+});
+
+document.querySelectorAll('.view-btn').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    viewMode = btn.dataset.view;
+    document.querySelectorAll('.view-btn').forEach((b) => b.classList.toggle('active', b === btn));
     render();
   });
 });
@@ -337,7 +312,7 @@ async function reclassify(post) {
     await refresh();
   } catch (err) {
     logger.error('reclassify', post.id, err);
-    setBanner(`Classify failed: ${err.message} (see Logs for details)`);
+    setBanner(`Classify failed: ${err.message} (see Debug logs in Settings)`);
   }
 }
 
@@ -355,7 +330,7 @@ async function suggestComment(post) {
     await refresh();
   } catch (err) {
     logger.error('suggestComment', post.id, err);
-    setBanner(`Suggest comment failed: ${err.message} (see Logs for details)`);
+    setBanner(`Suggest comment failed: ${err.message} (see Debug logs in Settings)`);
   }
 }
 
@@ -615,12 +590,7 @@ function textareaField(post, key, isTopLevel = false) {
 
 // One post at a time, in scrape order, with Prev/Next — matches "default to
 // the first unprocessed saved post" and resumes where you left off.
-function renderPendingQueue() {
-  const queue = pendingQueue();
-  if (!queue.length) {
-    listEl.appendChild(el('div', { class: 'empty-state' }, ['No pending posts. Click "Scan saved posts" to pull from LinkedIn.']));
-    return;
-  }
+function renderPendingQueue(queue) {
   const index = resolveCurrentIndex(queue, lastPendingIndex);
   lastPendingIndex = index;
   const current = queue[index];
@@ -639,18 +609,62 @@ function renderPendingQueue() {
   listEl.appendChild(renderCard(current));
 }
 
+function statusSummary(post) {
+  if (post.status === 'processed') return post.unsaveStatus === 'done' ? 'unsaved' : post.unsaveStatus;
+  return post.classifiedAt ? 'classified' : 'not classified';
+}
+
+function renderTable(list) {
+  const rows = list.map((post) => {
+    const c = post.classification || {};
+    const project = c.project === 'Other' ? (c.projectCustom || 'Other') : (c.project || '');
+    const date = post.processedAt || post.postDateTime || post.postedRelative || post.createdAt || '';
+    return el('tr', { onclick: () => selectFromTable(post) }, [
+      el('td', {}, [post.author || 'Unknown author']),
+      el('td', { class: 'ellipsis' }, [c.topic || '']),
+      el('td', {}, [project]),
+      el('td', {}, [c.type ? (TYPE_LABELS[c.type] || c.type) : '']),
+      el('td', {}, [post.status === 'pending' ? String(post.priority ?? '') : '']),
+      el('td', {}, [statusSummary(post)]),
+      el('td', {}, [/^\d{4}-\d{2}-\d{2}/.test(date) ? date.slice(0, 10) : date]),
+    ]);
+  });
+  const table = el('table', { class: 'post-table' }, [
+    el('thead', {}, [el('tr', {}, ['Author', 'Topic', 'Project', 'Type', 'Priority', 'Status', 'Date'].map((h) => el('th', {}, [h])))]),
+    el('tbody', {}, rows),
+  ]);
+  return table;
+}
+
+// Jumps a table row into the single-post card view — for a pending post that
+// means positioning the review queue on it, since renderPendingQueue only
+// ever shows the queue's current post.
+async function selectFromTable(post) {
+  if (post.status === 'pending') {
+    const queue = pendingQueue();
+    const idx = queue.findIndex((p) => p.id === post.id);
+    if (idx >= 0) await goToIndex(queue, idx);
+  }
+  viewMode = 'cards';
+  document.querySelectorAll('.view-btn').forEach((b) => b.classList.toggle('active', b.dataset.view === 'cards'));
+  render();
+}
+
 function render() {
   listEl.innerHTML = '';
-  if (activeTab === 'pending') {
-    renderPendingQueue();
+  const list = activeTab === 'pending' ? pendingQueue() : posts.filter((p) => p.status === 'processed');
+  if (!list.length) {
+    listEl.appendChild(el('div', { class: 'empty-state' }, [
+      activeTab === 'pending' ? 'No pending posts. Click "Scan saved posts" to pull from LinkedIn.' : 'Nothing processed yet.',
+    ]));
     return;
   }
-  const processed = posts.filter((p) => p.status === 'processed');
-  if (!processed.length) {
-    listEl.appendChild(el('div', { class: 'empty-state' }, ['Nothing processed yet.']));
+  if (viewMode === 'table') {
+    listEl.appendChild(renderTable(list));
     return;
   }
-  processed.forEach((post) => listEl.appendChild(renderCard(post)));
+  if (activeTab === 'pending') renderPendingQueue(list);
+  else list.forEach((post) => listEl.appendChild(renderCard(post)));
 }
 
 (async function init() {

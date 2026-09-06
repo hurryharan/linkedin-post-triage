@@ -10,30 +10,21 @@
     <div class="tabs">
       <button class="tab-btn active" data-tab="pending">Pending</button>
       <button class="tab-btn" data-tab="processed">Processed</button>
+      <div class="view-toggle">
+        <button class="view-btn active" data-view="cards">Cards</button>
+        <button class="view-btn" data-view="table">Table</button>
+      </div>
     </div>
     <div class="toolbar">
       <button id="scanBtn">Scan saved posts</button>
       <button id="classifyAllBtn">Classify all pending</button>
       <button id="offlineAiBtn" title="Classify via a pasted Claude/ChatGPT response, no API key needed">Offline AI</button>
       <button id="exportBtn">Export .xlsx</button>
-      <button id="logsBtn" title="Debug logs">Logs</button>
       <button id="settingsBtn" title="Settings">⚙</button>
     </div>
   </header>
 
   <div id="banner" class="banner" hidden></div>
-
-  <div id="logsPanel" class="logs-panel" hidden>
-    <div class="logs-toolbar">
-      <span>Debug log (newest last) — useful to copy/paste when reporting a bug.</span>
-      <div class="btns">
-        <button id="logsCopyBtn" class="small">Copy</button>
-        <button id="logsClearBtn" class="small">Clear</button>
-        <button id="logsCloseBtn" class="small">Close</button>
-      </div>
-    </div>
-    <pre id="logsContent" class="logs-content"></pre>
-  </div>
 
   <div id="offlinePanel" class="offline-panel" hidden>
     <div class="offline-step">
