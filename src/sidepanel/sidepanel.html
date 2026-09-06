@@ -27,12 +27,15 @@
   <div id="banner" class="banner" hidden></div>
 
   <div id="offlinePanel" class="offline-panel" hidden>
+    <div class="offline-panel-header">
+      <span>Offline classification</span>
+      <button id="offlineCloseBtn" class="small">Cancel</button>
+    </div>
     <div class="offline-step">
       <div class="offline-toolbar">
         <span>1. Copy this prompt into Claude or ChatGPT.</span>
         <div class="btns">
           <button id="offlineCopyBtn" class="small">Copy</button>
-          <button id="offlineCloseBtn" class="small">Close</button>
         </div>
       </div>
       <textarea id="offlinePromptEl" class="offline-textarea" readonly></textarea>

@@ -581,28 +581,31 @@ function renderReviewCard(post, rerender) {
   // draft for free from the classification prompt's own commentDraft field.
   const hasLiveKey = !!getActiveCredentials(settings || {}).apiKey;
   const hasDraft = !!(post.commentDraft && post.commentDraft.trim());
+  const commentActionsRow = el('div', { class: 'section-row' }, [
+    el('div', { class: 'btns' }, [
+      el('button', { class: 'small', ...(busy || !hasLiveKey ? { disabled: 'disabled' } : {}), title: hasLiveKey ? '' : 'Set an API key in Settings to use this, or get a draft for free by classifying in Offline mode', onclick: () => suggestComment(post) }, ['Suggest with AI']),
+      el('button', { class: 'small', ...(busy || !hasDraft ? { disabled: 'disabled' } : {}), onclick: () => copyComment(post) }, ['Copy']),
+    ]),
+    el('label', { class: 'tag-chip' }, [
+      el('input', {
+        type: 'checkbox',
+        ...(post.commentPosted ? { checked: 'checked' } : {}),
+        onchange: async (e) => {
+          post.commentPosted = e.target.checked ? new Date().toISOString() : null;
+          await upsertPost(post);
+          rerender();
+        },
+      }),
+      'Posted it myself',
+    ]),
+  ]);
+  const commentTextarea = textareaField(post, 'commentDraft', true);
+  // Live mode: the button that fills the field sits above it, same as
+  // Classify sitting above the fields it populates. Offline mode: the draft
+  // usually arrives pre-filled from the classification step itself, so the
+  // content comes first and the (mostly secondary/Copy-only) actions follow.
   const commentBlock = post.actions.comment
-    ? el('div', { class: 'comment-block' }, [
-        textareaField(post, 'commentDraft', true),
-        el('div', { class: 'section-row' }, [
-          el('div', { class: 'btns' }, [
-            el('button', { class: 'small', ...(busy || !hasLiveKey ? { disabled: 'disabled' } : {}), title: hasLiveKey ? '' : 'Set an API key in Settings to use this, or get a draft for free by classifying in Offline mode', onclick: () => suggestComment(post) }, ['Suggest with AI']),
-            el('button', { class: 'small', ...(busy || !hasDraft ? { disabled: 'disabled' } : {}), onclick: () => copyComment(post) }, ['Copy']),
-          ]),
-          el('label', { class: 'tag-chip' }, [
-            el('input', {
-              type: 'checkbox',
-              ...(post.commentPosted ? { checked: 'checked' } : {}),
-              onchange: async (e) => {
-                post.commentPosted = e.target.checked ? new Date().toISOString() : null;
-                await upsertPost(post);
-                rerender();
-              },
-            }),
-            'Posted it myself',
-          ]),
-        ]),
-      ])
+    ? el('div', { class: 'comment-block' }, isOfflineMode() ? [commentTextarea, commentActionsRow] : [commentActionsRow, commentTextarea])
     : null;
 
   return el('div', { class: 'card' }, [

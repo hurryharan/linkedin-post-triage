@@ -57,6 +57,15 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   flex-direction: column;
   gap: 8px;
 }
+.offline-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #eee;
+  font-weight: 600;
+  font-size: 12px;
+}
 .offline-step { display: flex; flex-direction: column; gap: 4px; }
 .offline-toolbar {
   display: flex;
