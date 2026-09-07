@@ -123,6 +123,10 @@ function defaultSettings() {
     // 'live' = call the configured provider's API. 'offline' = build a prompt
     // to paste into Claude/ChatGPT's own UI and paste the reply back in.
     classifyMode: 'live',
+    // Whether the offline prompt repeats the full instructions/schema, or
+    // just says "same as before" and gives the new post(s) — for reusing
+    // one chat window across many classify runs instead of a fresh one each time.
+    offlineIncludeContext: true,
   };
 }
 

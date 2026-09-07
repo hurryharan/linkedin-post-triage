@@ -3,7 +3,11 @@
 // pasted back in. No network calls live here — this only builds/parses text.
 import { classifySystemPrompt, COMMENT_SYSTEM_PROMPT, POST_TYPES, ACTION_KEYS } from './prompts.js';
 
-export function buildOfflinePrompt(posts, projects) {
+// includeContext: false skips the CONTEXT/OUTPUT/commentDraft sections
+// entirely, for reusing the same chat window rather than a fresh one each
+// time — those instructions are already sitting a few messages up, and
+// repeating them every post just burns tokens and clutters the thread.
+export function buildOfflinePrompt(posts, projects, includeContext = true) {
   const items = posts.map((p) => ({
     id: p.id,
     author: p.author || 'unknown',
@@ -11,6 +15,14 @@ export function buildOfflinePrompt(posts, projects) {
     postText: p.postText || '(no text captured)',
   }));
   const countPhrase = items.length === 1 ? 'exactly 1 post' : `exactly ${items.length} posts`;
+
+  if (!includeContext) {
+    return [
+      `Same instructions and JSON output format as before in this chat. Classify ${countPhrase} below and respond with ONLY a JSON array (no ` + '```json fence, no markdown, no text before or after it) — one object per post, in the same order, each with all nine keys (id, topic, summary, whySaved, project, projectCustom, type, recommendedActions, commentDraft). Every id must appear exactly once, unchanged.',
+      '',
+      JSON.stringify(items, null, 2),
+    ].join('\n');
+  }
 
   return [
     'You are a JSON-generating classification tool with no other purpose in this exchange.',
@@ -25,7 +37,7 @@ export function buildOfflinePrompt(posts, projects) {
     JSON.stringify(items, null, 2),
     '',
     '=== OUTPUT ===',
-    `Return a JSON array with ${countPhrase === 'exactly 1 post' ? 'exactly 1 object' : `exactly ${items.length} objects`} — one per input post, in the same order, each shaped EXACTLY like this (all eight keys required):`,
+    `Return a JSON array with ${countPhrase === 'exactly 1 post' ? 'exactly 1 object' : `exactly ${items.length} objects`} — one per input post, in the same order, each shaped EXACTLY like this (all nine keys required):`,
     '{',
     '  "id": "<copy the matching input post\'s id, character-for-character>",',
     '  "topic": "<a few words>",',

@@ -1,4 +1,4 @@
-import { getAllPosts, upsertPost, mergeScraped, clearAllPosts, getSettings, getActiveCredentials, getQueueState, setQueueState, SETTINGS_KEY } from '../lib/storage.js';
+import { getAllPosts, upsertPost, mergeScraped, clearAllPosts, getSettings, setSettings, getActiveCredentials, getQueueState, setQueueState, SETTINGS_KEY } from '../lib/storage.js';
 import { classifyPost, draftComment, PROVIDER_LABELS } from '../lib/ai-client.js';
 import { POST_TYPES, TYPE_LABELS, ACTION_KEYS, ACTION_LABELS } from '../lib/prompts.js';
 import { buildOfflinePrompt, parseOfflineResponse } from '../lib/offline-prompt.js';
@@ -271,17 +271,33 @@ const offlinePanelEl = document.getElementById('offlinePanel');
 const offlinePromptEl = document.getElementById('offlinePromptEl');
 const offlinePasteEl = document.getElementById('offlinePasteEl');
 const offlineApplyBtn = document.getElementById('offlineApplyBtn');
+const offlineIncludeContextEl = document.getElementById('offlineIncludeContextEl');
 let offlineTargetIds = [];
+let offlineCurrentTargets = [];
+
+function rebuildOfflinePrompt() {
+  offlinePromptEl.value = buildOfflinePrompt(offlineCurrentTargets, settings.projects || [], offlineIncludeContextEl.checked);
+}
 
 function openOfflinePanel(targets) {
   settings = settings || {};
+  offlineCurrentTargets = targets;
   offlineTargetIds = targets.map((p) => p.id);
-  offlinePromptEl.value = buildOfflinePrompt(targets, settings.projects || []);
+  offlineIncludeContextEl.checked = settings.offlineIncludeContext !== false;
+  rebuildOfflinePrompt();
   offlinePasteEl.value = '';
   offlineApplyBtn.disabled = true; // nothing pasted yet
   offlinePanelEl.hidden = false;
   setBanner(`Prompt built for ${targets.length} post(s). Copy it into Claude or ChatGPT, then paste the reply back below.`);
 }
+
+// Remembered across sessions — this is meant for reusing the same chat
+// window across many classify runs, not re-deciding it every single time.
+offlineIncludeContextEl.addEventListener('change', async () => {
+  rebuildOfflinePrompt();
+  settings = { ...settings, offlineIncludeContext: offlineIncludeContextEl.checked };
+  await setSettings(settings);
+});
 
 offlinePasteEl.addEventListener('input', () => {
   offlineApplyBtn.disabled = !offlinePasteEl.value.trim();
