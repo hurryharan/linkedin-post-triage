@@ -15,7 +15,7 @@ export const DEFAULT_PROJECTS = ['Niti', 'Hetu', 'iSPIRT', 'Samyog', 'DEPA', 'In
 // Single source of truth for the action tags a classification can recommend.
 // storage.js, the side panel, xlsx-export.js, and both providers' schemas all
 // import from here so a new action only needs adding in one place.
-export const ACTION_KEYS = ['like', 'comment', 'crm', 'research', 'post_idea', 'repost', 'info', 'opportunities'];
+export const ACTION_KEYS = ['like', 'comment', 'crm', 'research', 'post_idea', 'repost', 'info', 'opportunities', 'gtm_ideas'];
 
 export const ACTION_LABELS = {
   like: 'Like',
@@ -26,6 +26,7 @@ export const ACTION_LABELS = {
   repost: 'Repost',
   info: 'Info',
   opportunities: 'Opportunities',
+  gtm_ideas: 'GTM Ideas',
 };
 
 const ACTION_GUIDANCE = {
@@ -37,6 +38,7 @@ const ACTION_GUIDANCE = {
   repost: 'worth resharing to your own network as-is',
   info: 'just worth having noted/remembered — no action on LinkedIn or elsewhere needed',
   opportunities: 'a concrete business opportunity worth pursuing — a partnership, deal, hire, or lead',
+  gtm_ideas: 'sparks a go-to-market or growth strategy idea worth exploring (positioning, channel, pricing, campaign)',
 };
 
 export function classifySystemPrompt(projects) {
